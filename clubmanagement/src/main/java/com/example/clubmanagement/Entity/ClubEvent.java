@@ -1,38 +1,39 @@
 package com.example.clubmanagement.Entity;
 
-import com.example.clubmanagement.Enum.ClubStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "clubs")
+@Table(name = "club_event")
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
 @Builder
-public class Club {
+public class ClubEvent {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "club_id", nullable = false)
+    private Club club;
+
     @Column(nullable = false)
-    private String name;
+    private String title;
 
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "logo_url")
-    private String logoUrl;
+    @Column(name = "start_time", nullable = false)
+    private LocalDateTime startTime;
 
-    @Column(name = "main_color")
-    private String mainColor;
+    @Column(name = "end_time", nullable = false)
+    private LocalDateTime endTime;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ClubStatus status; // ACTIVE, INACTIVE
+    private String location;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
 
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -41,21 +42,9 @@ public class Club {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    // Getter/Setter alias to support legacy clubName field references
-    public String getClubName() {
-        return this.name;
-    }
-
-    public void setClubName(String clubName) {
-        this.name = clubName;
-    }
-
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
-        if (status == null) {
-            status = ClubStatus.ACTIVE;
-        }
     }
 
     @PreUpdate

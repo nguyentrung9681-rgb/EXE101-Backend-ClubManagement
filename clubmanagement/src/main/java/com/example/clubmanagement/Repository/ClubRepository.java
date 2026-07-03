@@ -7,7 +7,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 @Repository
-public interface ClubRepository extends JpaRepository<Club, Long> {
-    //Tìm kiếm clb theo từ khóa (tên hoặc mô tả)
-    List<Club> findByClubNameContainingOrDescriptionContaining(String nameKey, String descKey);
+public interface ClubRepository extends JpaRepository<Club, Integer> {
+    // Tìm kiếm clb theo từ khóa (tên hoặc mô tả)
+    List<Club> findByNameContainingOrDescriptionContaining(String nameKey, String descKey);
 }

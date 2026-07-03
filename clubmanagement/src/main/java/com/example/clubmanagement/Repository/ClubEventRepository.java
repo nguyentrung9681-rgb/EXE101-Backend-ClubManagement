@@ -1,12 +1,11 @@
 package com.example.clubmanagement.Repository;
 
-import com.example.clubmanagement.Entity.Department;
+import com.example.clubmanagement.Entity.ClubEvent;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
-
 import java.util.List;
 
 @Repository
-public interface DepartmentRepository extends JpaRepository<Department, Long> {
-    List<Department> findByClubId(Integer clubId);
+public interface ClubEventRepository extends JpaRepository<ClubEvent, Integer> {
+    List<ClubEvent> findByClubId(Integer clubId);
 }
