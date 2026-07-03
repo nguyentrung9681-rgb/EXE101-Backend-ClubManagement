@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor @AllArgsConstructor
 @Builder
 public class ClubResponse {
-    private Integer id;
+    private Long id;
     private String name;
     private String description;
     private String logoUrl;

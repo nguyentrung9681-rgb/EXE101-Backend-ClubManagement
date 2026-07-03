@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 @Builder
 public class ClubEventResponse {
     private Integer id;
-    private Integer clubId;
+    private Long clubId;
     private String clubName;
     private String title;
     private String description;

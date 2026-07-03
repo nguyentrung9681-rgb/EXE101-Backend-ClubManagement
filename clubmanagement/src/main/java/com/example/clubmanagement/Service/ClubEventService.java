@@ -40,7 +40,7 @@ public class ClubEventService {
      * Tạo một sự kiện CLB mới và tự động đồng bộ lên Google Calendar nếu người tạo đã liên kết tài khoản.
      */
     @Transactional
-    public ClubEvent createEvent(ClubEvent event, Integer clubId, Integer userId) {
+    public ClubEvent createEvent(ClubEvent event, Long clubId, Integer userId) {
         Club club = clubRepository.findById(clubId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy Câu lạc bộ!"));
         User creator = userRepository.findById(userId)
@@ -161,7 +161,7 @@ public class ClubEventService {
         clubEventRepository.delete(event);
     }
 
-    public List<ClubEvent> getEventsByClubId(Integer clubId) {
+    public List<ClubEvent> getEventsByClubId(Long clubId) {
         return clubEventRepository.findByClubId(clubId);
     }
 

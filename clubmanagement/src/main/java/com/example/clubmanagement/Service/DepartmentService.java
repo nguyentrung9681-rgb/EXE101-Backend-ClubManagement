@@ -24,7 +24,7 @@ public class DepartmentService {
     private ClubMemberRepository clubMemberRepository;
 
     // Check xem user có phải là Club Manager của CLB đó hay không
-    private void validateClubManager(Integer userId, Integer clubId) {
+    private void validateClubManager(Integer userId, Long clubId) {
         ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
                 .orElseThrow(() -> new RuntimeException("Bạn không thuộc câu lạc bộ này."));
         if (member.getRole() != ClubRole.CLUB_MANAGER) {
@@ -32,7 +32,7 @@ public class DepartmentService {
         }
     }
 
-    public Department createDepartment(Integer managerId, Integer clubId, String name, String description, String colorHex) {
+    public Department createDepartment(Integer managerId, Long clubId, String name, String description, String colorHex) {
         validateClubManager(managerId, clubId);
 
         Club club = clubRepository.findById(clubId).orElseThrow(() -> new RuntimeException("Không tìm thấy CLB."));

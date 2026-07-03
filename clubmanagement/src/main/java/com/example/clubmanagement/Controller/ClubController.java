@@ -68,7 +68,7 @@ public class ClubController {
      * GET /api/clubs/{id}
      */
     @GetMapping("/{id}")
-    public ResponseEntity<?> getClubById(@PathVariable Integer id) {
+    public ResponseEntity<?> getClubById(@PathVariable Long id) {
         try {
             Club club = clubService.getClubById(id);
             return ResponseEntity.ok(mapToClubResponse(club));

@@ -31,7 +31,7 @@ public class RecruitmentService {
     private static final String REJECT_MESSAGE_DEFAULT =
             "Xin chân thành cảm ơn bạn đã muốn tham gia clb nhưng hiện tại vì số yêu cầu bạn chưa đáp ứng, chúc bạn may mắn lần sau";
 
-    public RecruitmentApplication sendJoinRequest(Integer userId, Integer clubId, String content) {
+    public RecruitmentApplication sendJoinRequest(Integer userId, Long clubId, String content) {
         // 1. Kiểm tra xem đã là thành viên chưa
         if (clubMemberRepository.existsByUserUserIdAndClubId(userId, clubId)) {
             throw new RuntimeException("Bạn đã là thành viên của câu lạc bộ này rồi.");
@@ -56,7 +56,7 @@ public class RecruitmentService {
         return applicationRepository.save(application);
     }
 
-    public List<RecruitmentApplication> getPendingRequests(Integer clubId) {
+    public List<RecruitmentApplication> getPendingRequests(Long clubId) {
         return applicationRepository.findByClubIdAndStatus(clubId, ApplicationStatus.PENDING);
     }
 

@@ -7,8 +7,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor @AllArgsConstructor
 @Builder
 public class ClubMemberResponse {
-    private Integer id;
-    private Integer clubId;
+    private Long id;
+    private Long clubId;
     private String clubName;
     private Integer userId;
     private String fullName;

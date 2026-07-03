@@ -4,11 +4,7 @@ import com.example.clubmanagement.Entity.Club;
 import com.example.clubmanagement.Entity.ClubMember;
 import com.example.clubmanagement.Entity.ClubPost;
 import com.example.clubmanagement.Entity.User;
-import com.example.clubmanagement.Enum.ClubMemberStatus;
-import com.example.clubmanagement.Enum.ClubRole;
-import com.example.clubmanagement.Enum.ClubStatus;
-import com.example.clubmanagement.Enum.PostStatus;
-import com.example.clubmanagement.Enum.Visibility;
+import com.example.clubmanagement.Enum.*;
 import com.example.clubmanagement.Repository.ClubMemberRepository;
 import com.example.clubmanagement.Repository.ClubPostRepository;
 import com.example.clubmanagement.Repository.ClubRepository;
@@ -23,18 +19,18 @@ import java.util.List;
 public class ClubService {
 
     private final ClubRepository clubRepository;
+    private final ClubPostRepository clubPostRepository;
     private final ClubMemberRepository clubMemberRepository;
     private final UserRepository userRepository;
-    private final ClubPostRepository clubPostRepository;
 
     public ClubService(ClubRepository clubRepository,
+                       ClubPostRepository clubPostRepository,
                        ClubMemberRepository clubMemberRepository,
-                       UserRepository userRepository,
-                       ClubPostRepository clubPostRepository) {
+                       UserRepository userRepository) {
         this.clubRepository = clubRepository;
+        this.clubPostRepository = clubPostRepository;
         this.clubMemberRepository = clubMemberRepository;
         this.userRepository = userRepository;
-        this.clubPostRepository = clubPostRepository;
     }
 
     public List<ClubPost> getPublicPosts() {
@@ -46,7 +42,7 @@ public class ClubService {
     }
 
     /**
-     * Tạo một câu lạc bộ mới và tự động gán người tạo làm Chủ nhiệm (PRESIDENT).
+     * Tạo một câu lạc bộ mới và tự động gán người tạo làm Chủ nhiệm (CLUB_MANAGER).
      */
     @Transactional
     public Club createClub(Club club, Integer userId) {
@@ -61,7 +57,7 @@ public class ClubService {
         ClubMember president = ClubMember.builder()
                 .club(savedClub)
                 .user(creator)
-                .role(ClubRole.PRESIDENT)
+                .role(ClubRole.CLUB_MANAGER)
                 .status(ClubMemberStatus.ACTIVE)
                 .joinedAt(LocalDateTime.now())
                 .build();
@@ -74,7 +70,7 @@ public class ClubService {
         return clubRepository.findAll();
     }
 
-    public Club getClubById(Integer id) {
+    public Club getClubById(Long id) {
         return clubRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy Câu lạc bộ!"));
     }

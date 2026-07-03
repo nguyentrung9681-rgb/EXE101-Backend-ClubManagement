@@ -10,8 +10,8 @@ import java.util.List;
 @Repository
 public interface RecruitmentApplicationRepository extends JpaRepository<RecruitmentApplication, Long> {
     //tìm đơn đặng kí theo club và trạng thái
-    List<RecruitmentApplication> findByClubIdAndStatus(Integer clubId, ApplicationStatus status);
+    List<RecruitmentApplication> findByClubIdAndStatus(Long clubId, ApplicationStatus status);
 
     //check xem user đã gửi đơn cho clb này chưa và đang đợi duyệt
-    boolean existsByUserUserIdAndClubIdAndStatus(Integer userId, Integer clubId, ApplicationStatus status);
+    boolean existsByUserUserIdAndClubIdAndStatus(Integer userId, Long clubId, ApplicationStatus status);
 }

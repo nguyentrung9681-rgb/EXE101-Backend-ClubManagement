@@ -21,7 +21,7 @@ public class DepartmentController {
     @PostMapping("/club/{clubId}")
     public ResponseEntity<?> createDept(
             @RequestHeader("X-User-Id") Integer managerId,
-            @PathVariable Integer clubId,
+            @PathVariable Long clubId,
             @RequestBody Map<String, String> body) {
         try {
             Department dept = departmentService.createDepartment(

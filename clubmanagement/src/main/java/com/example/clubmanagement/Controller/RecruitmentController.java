@@ -19,7 +19,7 @@ public class RecruitmentController {
     @PostMapping("/{clubId}/join-request")
     public ResponseEntity<?> joinRequest(
             @RequestHeader("X-User-Id") Integer userId,
-            @PathVariable Integer clubId,
+            @PathVariable Long clubId,
             @RequestBody Map<String, String> body) {
         try {
             String content = body.get("applicationContent");
@@ -32,7 +32,7 @@ public class RecruitmentController {
 
     //4.club manager lấy danh sách các đơn đang chờ duyệt của clb mình
     @GetMapping("/{clubId}/requests")
-    public ResponseEntity<List<RecruitmentApplication>> getPendingRequests(@PathVariable Integer clubId) {
+    public ResponseEntity<List<RecruitmentApplication>> getPendingRequests(@PathVariable Long clubId) {
         return ResponseEntity.ok(recruitmentService.getPendingRequests(clubId));
     }
 

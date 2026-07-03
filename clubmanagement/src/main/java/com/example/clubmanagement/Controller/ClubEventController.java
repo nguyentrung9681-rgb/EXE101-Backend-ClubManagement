@@ -28,7 +28,7 @@ public class ClubEventController {
      */
     @PostMapping
     public ResponseEntity<?> createEvent(@RequestBody ClubEventRequest eventRequest,
-                                         @RequestParam Integer clubId,
+                                         @RequestParam Long clubId,
                                          @RequestParam Integer userId) {
         try {
             ClubEvent event = ClubEvent.builder()
@@ -88,7 +88,7 @@ public class ClubEventController {
      * GET /api/events/club/{clubId}
      */
     @GetMapping("/club/{clubId}")
-    public ResponseEntity<List<ClubEventResponse>> getEventsByClub(@PathVariable Integer clubId) {
+    public ResponseEntity<List<ClubEventResponse>> getEventsByClub(@PathVariable Long clubId) {
         List<ClubEventResponse> responses = clubEventService.getEventsByClubId(clubId).stream()
                 .map(this::mapToClubEventResponse)
                 .collect(Collectors.toList());
