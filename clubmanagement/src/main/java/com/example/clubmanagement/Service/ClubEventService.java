@@ -8,6 +8,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.DayOfWeek;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -69,6 +72,12 @@ public class ClubEventService {
                 sync.setGoogleEtag(googleResult.get("googleEtag"));
                 sync.setSyncStatus(SyncStatus.SYNCED);
                 sync.setLastSyncedAt(LocalDateTime.now());
+
+                // Lưu link Google Meet vào sự kiện
+                if (googleResult.containsKey("googleMeetLink") && !googleResult.get("googleMeetLink").isEmpty()) {
+                    savedEvent.setMeetLink(googleResult.get("googleMeetLink"));
+                    clubEventRepository.save(savedEvent);
+                }
             } catch (Exception e) {
                 sync.setSyncStatus(SyncStatus.FAILED);
                 sync.setLastSyncError("Không thể tạo sự kiện trên Google Calendar: " + e.getMessage());
@@ -115,10 +124,20 @@ public class ClubEventService {
                     sync.setGoogleEventId(googleResult.get("googleEventId"));
                     sync.setGoogleEventLink(googleResult.get("googleEventLink"));
                     sync.setGoogleEtag(googleResult.get("googleEtag"));
+
+                    if (googleResult.containsKey("googleMeetLink") && !googleResult.get("googleMeetLink").isEmpty()) {
+                        savedEvent.setMeetLink(googleResult.get("googleMeetLink"));
+                        clubEventRepository.save(savedEvent);
+                    }
                 } else {
                     // Nếu đã có googleEventId, gọi API cập nhật
                     Map<String, String> googleResult = googleCalendarService.updateEvent(savedEvent, sync, account);
                     sync.setGoogleEtag(googleResult.get("googleEtag"));
+
+                    if (googleResult.containsKey("googleMeetLink") && !googleResult.get("googleMeetLink").isEmpty()) {
+                        savedEvent.setMeetLink(googleResult.get("googleMeetLink"));
+                        clubEventRepository.save(savedEvent);
+                    }
                 }
                 sync.setSyncStatus(SyncStatus.SYNCED);
                 sync.setLastSyncedAt(LocalDateTime.now());
@@ -172,5 +191,100 @@ public class ClubEventService {
 
     public Optional<EventGoogleSync> getSyncInfo(Integer eventId) {
         return eventGoogleSyncRepository.findByClubEventId(eventId);
+    }
+
+    /**
+     * Lọc sự kiện theo khoảng thời gian: ngày, tuần, hoặc tháng.
+     */
+    public List<ClubEvent> getFilteredEvents(Integer clubId, String viewType, LocalDate date) {
+        if (date == null) {
+            date = LocalDate.now();
+        }
+
+        LocalDateTime start;
+        LocalDateTime end;
+
+        switch (viewType.toLowerCase()) {
+            case "day":
+                start = date.atStartOfDay();
+                end = date.atTime(LocalTime.MAX);
+                break;
+            case "week":
+                // Tuần bắt đầu từ Thứ Hai
+                DayOfWeek dayOfWeek = date.getDayOfWeek();
+                int daysToMonday = dayOfWeek.getValue() - DayOfWeek.MONDAY.getValue();
+                LocalDate monday = date.minusDays(daysToMonday);
+                LocalDate sunday = monday.plusDays(6);
+
+                start = monday.atStartOfDay();
+                end = sunday.atTime(LocalTime.MAX);
+                break;
+            case "month":
+                LocalDate firstDay = date.withDayOfMonth(1);
+                LocalDate lastDay = date.withDayOfMonth(date.lengthOfMonth());
+
+                start = firstDay.atStartOfDay();
+                end = lastDay.atTime(LocalTime.MAX);
+                break;
+            default:
+                throw new IllegalArgumentException("viewType không hợp lệ! Chỉ chấp nhận: day, week, month");
+        }
+
+        if (clubId != null) {
+            return clubEventRepository.findByClubIdAndStartTimeBetween(clubId, start, end);
+        } else {
+            return clubEventRepository.findByStartTimeBetween(start, end);
+        }
+    }
+
+    /**
+     * Đồng bộ thủ công một sự kiện lên Google Calendar (nếu trước đó bị lỗi hoặc chưa sync).
+     */
+    @Transactional
+    public ClubEvent syncEventToGoogle(Integer eventId, Integer userId) {
+        ClubEvent event = clubEventRepository.findById(eventId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy sự kiện!"));
+
+        GoogleAccount account = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(userId)
+                .orElseThrow(() -> new RuntimeException("Người dùng chưa liên kết tài khoản Google."));
+
+        EventGoogleSync sync = eventGoogleSyncRepository.findByClubEventId(eventId)
+                .orElse(EventGoogleSync.builder()
+                        .clubEvent(event)
+                        .syncStatus(SyncStatus.PENDING)
+                        .syncSource(SyncSource.LOCAL)
+                        .build());
+
+        sync.setGoogleCalendarId("primary");
+        try {
+            if (sync.getGoogleEventId() == null) {
+                Map<String, String> googleResult = googleCalendarService.createEvent(event, account);
+                sync.setGoogleEventId(googleResult.get("googleEventId"));
+                sync.setGoogleEventLink(googleResult.get("googleEventLink"));
+                sync.setGoogleEtag(googleResult.get("googleEtag"));
+
+                if (googleResult.containsKey("googleMeetLink") && !googleResult.get("googleMeetLink").isEmpty()) {
+                    event.setMeetLink(googleResult.get("googleMeetLink"));
+                    clubEventRepository.save(event);
+                }
+            } else {
+                Map<String, String> googleResult = googleCalendarService.updateEvent(event, sync, account);
+                sync.setGoogleEtag(googleResult.get("googleEtag"));
+
+                if (googleResult.containsKey("googleMeetLink") && !googleResult.get("googleMeetLink").isEmpty()) {
+                    event.setMeetLink(googleResult.get("googleMeetLink"));
+                    clubEventRepository.save(event);
+                }
+            }
+            sync.setSyncStatus(SyncStatus.SYNCED);
+            sync.setLastSyncedAt(LocalDateTime.now());
+            sync.setLastSyncError(null);
+        } catch (Exception e) {
+            sync.setSyncStatus(SyncStatus.FAILED);
+            sync.setLastSyncError("Đồng bộ thủ công thất bại: " + e.getMessage());
+        }
+
+        eventGoogleSyncRepository.save(sync);
+        return event;
     }
 }

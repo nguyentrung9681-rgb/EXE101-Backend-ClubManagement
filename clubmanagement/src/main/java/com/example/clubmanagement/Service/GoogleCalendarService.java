@@ -56,7 +56,9 @@ public class GoogleCalendarService {
                 .queryParam("access_type", "offline")
                 .queryParam("prompt", "consent")
                 .queryParam("state", userId.toString())
-                .build().toUriString();
+                .build()
+                .encode()
+                .toUriString();
     }
 
     private String codeChallengeOrResponse() {
@@ -193,9 +195,23 @@ public class GoogleCalendarService {
         end.put("dateTime", formatToIsoOffsetDateTime(event.getEndTime()));
         body.put("end", end);
 
+        // Tạo yêu cầu sinh link Google Meet
+        Map<String, Object> conferenceData = new HashMap<>();
+        Map<String, Object> createRequest = new HashMap<>();
+        createRequest.put("requestId", java.util.UUID.randomUUID().toString());
+        Map<String, String> conferenceSolutionKey = new HashMap<>();
+        conferenceSolutionKey.put("type", "hangoutsMeet");
+        createRequest.put("conferenceSolutionKey", conferenceSolutionKey);
+        conferenceData.put("createRequest", createRequest);
+        body.put("conferenceData", conferenceData);
+
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+        
+        // Thêm conferenceDataVersion=1 vào url để Google tạo link Meet
+        String url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1";
+
         ResponseEntity<String> response = restTemplate.postForEntity(
-                "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+                url,
                 request,
                 String.class
         );
@@ -209,6 +225,21 @@ public class GoogleCalendarService {
         result.put("googleEventId", jsonNode.get("id").asText());
         result.put("googleEventLink", jsonNode.has("htmlLink") ? jsonNode.get("htmlLink").asText() : "");
         result.put("googleEtag", jsonNode.has("etag") ? jsonNode.get("etag").asText().replace("\"", "") : "");
+
+        // Lấy link Google Meet từ entryPoints trong response
+        String googleMeetLink = null;
+        if (jsonNode.has("conferenceData") && jsonNode.get("conferenceData").has("entryPoints")) {
+            JsonNode entryPoints = jsonNode.get("conferenceData").get("entryPoints");
+            if (entryPoints.isArray()) {
+                for (JsonNode entry : entryPoints) {
+                    if (entry.has("entryPointType") && "video".equals(entry.get("entryPointType").asText())) {
+                        googleMeetLink = entry.get("uri").asText();
+                        break;
+                    }
+                }
+            }
+        }
+        result.put("googleMeetLink", googleMeetLink != null ? googleMeetLink : "");
 
         return result;
     }
@@ -236,8 +267,20 @@ public class GoogleCalendarService {
         end.put("dateTime", formatToIsoOffsetDateTime(event.getEndTime()));
         body.put("end", end);
 
+        // Chỉ tạo yêu cầu sinh link Google Meet nếu sự kiện hiện tại chưa có link
+        if (event.getMeetLink() == null || event.getMeetLink().isEmpty()) {
+            Map<String, Object> conferenceData = new HashMap<>();
+            Map<String, Object> createRequest = new HashMap<>();
+            createRequest.put("requestId", java.util.UUID.randomUUID().toString());
+            Map<String, String> conferenceSolutionKey = new HashMap<>();
+            conferenceSolutionKey.put("type", "hangoutsMeet");
+            createRequest.put("conferenceSolutionKey", conferenceSolutionKey);
+            conferenceData.put("createRequest", createRequest);
+            body.put("conferenceData", conferenceData);
+        }
+
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-        String url = String.format("https://www.googleapis.com/calendar/v3/calendars/%s/events/%s",
+        String url = String.format("https://www.googleapis.com/calendar/v3/calendars/%s/events/%s?conferenceDataVersion=1",
                 sync.getGoogleCalendarId() != null ? sync.getGoogleCalendarId() : "primary",
                 sync.getGoogleEventId());
 
@@ -255,6 +298,22 @@ public class GoogleCalendarService {
         JsonNode jsonNode = objectMapper.readTree(response.getBody());
         Map<String, String> result = new HashMap<>();
         result.put("googleEtag", jsonNode.has("etag") ? jsonNode.get("etag").asText().replace("\"", "") : "");
+
+        // Trích xuất link Google Meet (nếu có hoặc mới được tạo)
+        String googleMeetLink = null;
+        if (jsonNode.has("conferenceData") && jsonNode.get("conferenceData").has("entryPoints")) {
+            JsonNode entryPoints = jsonNode.get("conferenceData").get("entryPoints");
+            if (entryPoints.isArray()) {
+                for (JsonNode entry : entryPoints) {
+                    if (entry.has("entryPointType") && "video".equals(entry.get("entryPointType").asText())) {
+                        googleMeetLink = entry.get("uri").asText();
+                        break;
+                    }
+                }
+            }
+        }
+        result.put("googleMeetLink", googleMeetLink != null ? googleMeetLink : (event.getMeetLink() != null ? event.getMeetLink() : ""));
+
         return result;
     }
 

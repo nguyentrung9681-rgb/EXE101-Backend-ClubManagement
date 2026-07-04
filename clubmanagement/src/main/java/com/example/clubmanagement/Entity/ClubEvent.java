@@ -32,6 +32,9 @@ public class ClubEvent {
 
     private String location;
 
+    @Column(name = "meet_link", length = 1024)
+    private String meetLink;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;

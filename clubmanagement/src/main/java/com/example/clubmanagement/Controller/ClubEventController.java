@@ -8,6 +8,8 @@ import com.example.clubmanagement.dto.ClubEventResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -122,6 +124,36 @@ public class ClubEventController {
         return ResponseEntity.notFound().build();
     }
 
+    /**
+     * Lọc sự kiện theo ngày, tuần, tháng cho lịch hoạt động.
+     * GET /api/events/calendar?viewType=week&date=2026-07-03&clubId=1
+     */
+    @GetMapping("/calendar")
+    public ResponseEntity<List<ClubEventResponse>> getEventsForCalendar(
+            @RequestParam(required = false) Integer clubId,
+            @RequestParam String viewType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        
+        List<ClubEventResponse> responses = clubEventService.getFilteredEvents(clubId, viewType, date).stream()
+                .map(this::mapToClubEventResponse)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(responses);
+    }
+
+    /**
+     * Đồng bộ thủ công sự kiện lên Google Calendar.
+     * POST /api/events/{id}/sync?userId=1
+     */
+    @PostMapping("/{id}/sync")
+    public ResponseEntity<?> syncEvent(@PathVariable Integer id, @RequestParam Integer userId) {
+        try {
+            ClubEvent event = clubEventService.syncEventToGoogle(id, userId);
+            return ResponseEntity.ok(mapToClubEventResponse(event));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
     private ClubEventResponse mapToClubEventResponse(ClubEvent event) {
         if (event == null) return null;
         
@@ -144,6 +176,7 @@ public class ClubEventController {
                 .updatedAt(event.getUpdatedAt())
                 .googleEventLink(googleEventLink)
                 .syncStatus(syncStatus)
+                .meetLink(event.getMeetLink())
                 .build();
     }
 }

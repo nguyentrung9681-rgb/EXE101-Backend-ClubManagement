@@ -21,4 +21,5 @@ public class ClubEventResponse {
     private LocalDateTime updatedAt;
     private String googleEventLink;
     private String syncStatus;
+    private String meetLink;
 }
