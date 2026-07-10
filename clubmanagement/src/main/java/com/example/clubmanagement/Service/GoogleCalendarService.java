@@ -52,7 +52,7 @@ public class GoogleCalendarService {
                 .queryParam("client_id", clientId)
                 .queryParam("redirect_uri", redirectUri)
                 .queryParam("response_type", codeChallengeOrResponse())
-                .queryParam("scope", "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email")
+                .queryParam("scope", "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/drive.file")
                 .queryParam("access_type", "offline")
                 .queryParam("prompt", "consent")
                 .queryParam("state", userId.toString())
