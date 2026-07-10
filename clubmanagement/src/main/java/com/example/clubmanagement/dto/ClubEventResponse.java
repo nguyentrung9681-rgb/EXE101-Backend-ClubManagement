@@ -22,4 +22,5 @@ public class ClubEventResponse {
     private String googleEventLink;
     private String syncStatus;
     private String meetLink;
+    private String status;
 }

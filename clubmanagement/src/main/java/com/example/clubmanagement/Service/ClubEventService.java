@@ -1,6 +1,7 @@
 package com.example.clubmanagement.Service;
 
 import com.example.clubmanagement.Entity.*;
+import com.example.clubmanagement.Enum.ClubMemberRole;
 import com.example.clubmanagement.Enum.SyncSource;
 import com.example.clubmanagement.Enum.SyncStatus;
 import com.example.clubmanagement.Repository.*;
@@ -24,19 +25,22 @@ public class ClubEventService {
     private final GoogleAccountRepository googleAccountRepository;
     private final EventGoogleSyncRepository eventGoogleSyncRepository;
     private final GoogleCalendarService googleCalendarService;
+    private final ClubMemberRepository clubMemberRepository;
 
     public ClubEventService(ClubEventRepository clubEventRepository,
                             ClubRepository clubRepository,
                             UserRepository userRepository,
                             GoogleAccountRepository googleAccountRepository,
                             EventGoogleSyncRepository eventGoogleSyncRepository,
-                            GoogleCalendarService googleCalendarService) {
+                            GoogleCalendarService googleCalendarService,
+                            ClubMemberRepository clubMemberRepository) {
         this.clubEventRepository = clubEventRepository;
         this.clubRepository = clubRepository;
         this.userRepository = userRepository;
         this.googleAccountRepository = googleAccountRepository;
         this.eventGoogleSyncRepository = eventGoogleSyncRepository;
         this.googleCalendarService = googleCalendarService;
+        this.clubMemberRepository = clubMemberRepository;
     }
 
     /**
@@ -44,6 +48,19 @@ public class ClubEventService {
      */
     @Transactional
     public ClubEvent createEvent(ClubEvent event, Integer clubId, Integer userId) {
+        // Kiểm tra vai trò của người dùng trong CLB
+        ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của câu lạc bộ này!"));
+        if (member.getRole() != ClubMemberRole.PRESIDENT) {
+            throw new RuntimeException("Bạn không có quyền tạo sự kiện cho câu lạc bộ này!");
+        }
+
+        // Kiểm tra ngày đã qua
+        if (event.getStartTime() == null || event.getStartTime().toLocalDate().isBefore(LocalDate.now())) {
+            throw new RuntimeException("Không thể tạo lịch sự kiện cho ngày đã qua!");
+        }
+        event.setStatus("ONGOING");
+
         Club club = clubRepository.findById(clubId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy Câu lạc bộ!"));
         User creator = userRepository.findById(userId)
@@ -97,6 +114,19 @@ public class ClubEventService {
     public ClubEvent updateEvent(Integer eventId, ClubEvent updatedDetails, Integer userId) {
         ClubEvent event = clubEventRepository.findById(eventId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy sự kiện!"));
+
+        // Kiểm tra vai trò của người dùng trong CLB sở hữu sự kiện
+        Integer clubId = event.getClub().getId();
+        ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của câu lạc bộ này!"));
+        if (member.getRole() != ClubMemberRole.PRESIDENT) {
+            throw new RuntimeException("Bạn không có quyền chỉnh sửa sự kiện của câu lạc bộ này!");
+        }
+
+        checkAndUpdateEventStatus(event);
+        if ("ENDED".equals(event.getStatus())) {
+            throw new RuntimeException("Sự kiện đã kết thúc, không thể chỉnh sửa!");
+        }
 
         event.setTitle(updatedDetails.getTitle());
         event.setDescription(updatedDetails.getDescription());
@@ -162,6 +192,19 @@ public class ClubEventService {
         ClubEvent event = clubEventRepository.findById(eventId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy sự kiện!"));
 
+        // Kiểm tra vai trò của người dùng trong CLB sở hữu sự kiện
+        Integer clubId = event.getClub().getId();
+        ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của câu lạc bộ này!"));
+        if (member.getRole() != ClubMemberRole.PRESIDENT) {
+            throw new RuntimeException("Bạn không có quyền xóa sự kiện của câu lạc bộ này!");
+        }
+
+        checkAndUpdateEventStatus(event);
+        if ("ENDED".equals(event.getStatus())) {
+            throw new RuntimeException("Sự kiện đã kết thúc, không thể xóa!");
+        }
+
         Optional<EventGoogleSync> syncOpt = eventGoogleSyncRepository.findByClubEventId(eventId);
         if (syncOpt.isPresent()) {
             EventGoogleSync sync = syncOpt.get();
@@ -181,12 +224,16 @@ public class ClubEventService {
     }
 
     public List<ClubEvent> getEventsByClubId(Integer clubId) {
-        return clubEventRepository.findByClubId(clubId);
+        List<ClubEvent> events = clubEventRepository.findByClubId(clubId);
+        events.forEach(this::checkAndUpdateEventStatus);
+        return events;
     }
 
     public ClubEvent getEventById(Integer eventId) {
-        return clubEventRepository.findById(eventId)
+        ClubEvent event = clubEventRepository.findById(eventId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy sự kiện!"));
+        checkAndUpdateEventStatus(event);
+        return event;
     }
 
     public Optional<EventGoogleSync> getSyncInfo(Integer eventId) {
@@ -230,11 +277,14 @@ public class ClubEventService {
                 throw new IllegalArgumentException("viewType không hợp lệ! Chỉ chấp nhận: day, week, month");
         }
 
+        List<ClubEvent> events;
         if (clubId != null) {
-            return clubEventRepository.findByClubIdAndStartTimeBetween(clubId, start, end);
+            events = clubEventRepository.findByClubIdAndStartTimeBetween(clubId, start, end);
         } else {
-            return clubEventRepository.findByStartTimeBetween(start, end);
+            events = clubEventRepository.findByStartTimeBetween(start, end);
         }
+        events.forEach(this::checkAndUpdateEventStatus);
+        return events;
     }
 
     /**
@@ -286,5 +336,17 @@ public class ClubEventService {
 
         eventGoogleSyncRepository.save(sync);
         return event;
+    }
+
+    private void checkAndUpdateEventStatus(ClubEvent event) {
+        String currentStatus = event.getStatus();
+        if (currentStatus == null) {
+            currentStatus = "ONGOING";
+            event.setStatus(currentStatus);
+        }
+        if ("ONGOING".equals(currentStatus) && LocalDateTime.now().isAfter(event.getEndTime())) {
+            event.setStatus("ENDED");
+            clubEventRepository.save(event);
+        }
     }
 }

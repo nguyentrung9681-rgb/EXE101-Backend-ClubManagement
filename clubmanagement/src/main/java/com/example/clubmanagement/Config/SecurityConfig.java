@@ -38,7 +38,8 @@ public class SecurityConfig {
                                 "/oauth2/**",
                                 "/api/google/**",
                                 "/api/clubs/**",
-                                "/api/events/**"
+                                "/api/events/**",
+                                "/api/users/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

@@ -105,6 +105,9 @@ public class ClubEventController {
     public ResponseEntity<?> getEventById(@PathVariable Integer id) {
         try {
             ClubEvent event = clubEventService.getEventById(id);
+            if ("ENDED".equals(event.getStatus())) {
+                return ResponseEntity.badRequest().body("Sự kiện đã kết thúc, không thể xem chi tiết!");
+            }
             return ResponseEntity.ok(mapToClubEventResponse(event));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -177,6 +180,7 @@ public class ClubEventController {
                 .googleEventLink(googleEventLink)
                 .syncStatus(syncStatus)
                 .meetLink(event.getMeetLink())
+                .status(event.getStatus())
                 .build();
     }
 }

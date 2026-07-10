@@ -23,7 +23,6 @@ public class User {
     private String googleId;
     private String avatarUrl;
     private String phoneNumber;
-    private String studentCode;
 
     private String userStatus; // 'ACTIVE', 'INACTIVE', 'BANNED'
 

@@ -45,6 +45,16 @@ public class ClubEvent {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Builder.Default
+    private String status = "ONGOING";
+
+    public String getStatus() {
+        if (status == null) {
+            return "ONGOING";
+        }
+        return status;
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

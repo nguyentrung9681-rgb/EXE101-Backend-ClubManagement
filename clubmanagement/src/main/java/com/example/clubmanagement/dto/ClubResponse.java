@@ -12,6 +12,7 @@ public class ClubResponse {
     private String description;
     private String logoUrl;
     private String status;
+    private String visibility;
     private Integer createdByUserId;
     private String createdByName;
     private LocalDateTime createdAt;

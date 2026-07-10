@@ -6,6 +6,7 @@ import com.example.clubmanagement.Entity.User;
 import com.example.clubmanagement.Enum.ClubMemberRole;
 import com.example.clubmanagement.Enum.ClubMemberStatus;
 import com.example.clubmanagement.Enum.ClubStatus;
+import com.example.clubmanagement.Enum.ClubVisibility;
 import com.example.clubmanagement.Repository.ClubMemberRepository;
 import com.example.clubmanagement.Repository.ClubRepository;
 import com.example.clubmanagement.Repository.UserRepository;
@@ -61,4 +62,108 @@ public class ClubService {
         return clubRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy Câu lạc bộ!"));
     }
+
+    public List<ClubMember> getUserMemberships(Integer userId) {
+        return clubMemberRepository.findByUserUserId(userId);
+    }
+
+    /**
+     * Tham gia câu lạc bộ.
+     */
+    @Transactional
+    public ClubMember joinClub(Integer clubId, Integer userId) {
+        Club club = clubRepository.findById(clubId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy Câu lạc bộ!"));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
+
+        // Kiểm tra xem người dùng đã tham gia câu lạc bộ này chưa (bao gồm cả trường hợp đã tham gia, rời đi, hoặc bị từ chối trước đó)
+        ClubMember existingMember = clubMemberRepository.findByClubIdAndUserUserId(clubId, userId).orElse(null);
+
+        if (existingMember != null) {
+            if (existingMember.getStatus() == ClubMemberStatus.ACTIVE) {
+                throw new RuntimeException("Bạn đã là thành viên của câu lạc bộ này!");
+            } else if (existingMember.getStatus() == ClubMemberStatus.PENDING) {
+                throw new RuntimeException("Yêu cầu tham gia của bạn đang chờ phê duyệt!");
+            }
+            // Nếu là LEFT hoặc đã bị từ chối trước đó, chúng ta có thể cập nhật lại bản ghi này để xin tham gia lại
+            ClubMemberStatus status = (club.getVisibility() == ClubVisibility.PRIVATE) ? ClubMemberStatus.PENDING : ClubMemberStatus.ACTIVE;
+            LocalDateTime joinedAt = (status == ClubMemberStatus.ACTIVE) ? LocalDateTime.now() : null;
+
+            existingMember.setStatus(status);
+            existingMember.setRole(ClubMemberRole.MEMBER);
+            existingMember.setJoinedAt(joinedAt);
+            return clubMemberRepository.save(existingMember);
+        }
+
+        // Thiết lập trạng thái dựa trên chế độ hiển thị của Club cho thành viên mới hoàn toàn
+        ClubMemberStatus status = ClubMemberStatus.ACTIVE;
+        LocalDateTime joinedAt = LocalDateTime.now();
+
+        if (club.getVisibility() == ClubVisibility.PRIVATE) {
+            status = ClubMemberStatus.PENDING;
+            joinedAt = null;
+        }
+
+        ClubMember newMember = ClubMember.builder()
+                .club(club)
+                .user(user)
+                .role(ClubMemberRole.MEMBER)
+                .status(status)
+                .joinedAt(joinedAt)
+                .build();
+
+        return clubMemberRepository.save(newMember);
+    }
+
+    /**
+     * Lấy danh sách thành viên chờ duyệt (Chỉ dành cho chủ nhiệm).
+     */
+    public List<ClubMember> getPendingMembers(Integer clubId, Integer requesterUserId) {
+        checkPresidentPrivilege(clubId, requesterUserId);
+
+        return clubMemberRepository.findByClubId(clubId).stream()
+                .filter(member -> member.getStatus() == ClubMemberStatus.PENDING)
+                .toList();
+    }
+
+    /**
+     * Phê duyệt hoặc từ chối thành viên (Chỉ dành cho chủ nhiệm).
+     */
+    @Transactional
+    public ClubMember approveMember(Integer clubId, Integer memberId, Integer requesterUserId, boolean approve) {
+        checkPresidentPrivilege(clubId, requesterUserId);
+
+        ClubMember member = clubMemberRepository.findById(memberId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy thông tin đăng ký thành viên!"));
+
+        if (!member.getClub().getId().equals(clubId)) {
+            throw new RuntimeException("Thành viên này không thuộc câu lạc bộ này!");
+        }
+
+        if (member.getStatus() != ClubMemberStatus.PENDING) {
+            throw new RuntimeException("Thành viên này không ở trạng thái chờ duyệt!");
+        }
+
+        if (approve) {
+            member.setStatus(ClubMemberStatus.ACTIVE);
+            member.setJoinedAt(LocalDateTime.now());
+            return clubMemberRepository.save(member);
+        } else {
+            // Đổi trạng thái thành LEFT để giữ lịch sử và cho phép gửi lại yêu cầu xin tham gia ở lần sau
+            member.setStatus(ClubMemberStatus.LEFT);
+            member.setJoinedAt(null);
+            return clubMemberRepository.save(member);
+        }
+    }
+
+    private void checkPresidentPrivilege(Integer clubId, Integer requesterUserId) {
+        ClubMember requester = clubMemberRepository.findByClubIdAndUserUserId(clubId, requesterUserId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải là thành viên của câu lạc bộ này!"));
+
+        if (requester.getRole() != ClubMemberRole.PRESIDENT || requester.getStatus() != ClubMemberStatus.ACTIVE) {
+            throw new RuntimeException("Chỉ chủ nhiệm câu lạc bộ mới có quyền thực hiện hành động này!");
+        }
+    }
 }
+

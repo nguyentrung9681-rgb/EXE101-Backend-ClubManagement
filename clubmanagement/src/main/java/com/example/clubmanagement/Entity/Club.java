@@ -1,6 +1,7 @@
 package com.example.clubmanagement.Entity;
 
 import com.example.clubmanagement.Enum.ClubStatus;
+import com.example.clubmanagement.Enum.ClubVisibility;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
@@ -28,6 +29,10 @@ public class Club {
     @Column(nullable = false)
     private ClubStatus status; // ACTIVE, INACTIVE
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "visibility")
+    private ClubVisibility visibility; // PUBLIC, PRIVATE
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User createdBy;
@@ -43,6 +48,9 @@ public class Club {
         createdAt = LocalDateTime.now();
         if (status == null) {
             status = ClubStatus.ACTIVE;
+        }
+        if (visibility == null) {
+            visibility = ClubVisibility.PUBLIC;
         }
     }
 
