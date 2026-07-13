@@ -2,14 +2,17 @@ package com.example.clubmanagement.Controller;
 
 import com.example.clubmanagement.Entity.ClubDocument;
 import com.example.clubmanagement.Entity.DocumentRevision;
+import com.example.clubmanagement.Enum.DocumentType;
 import com.example.clubmanagement.Service.ClubDocumentService;
 import com.example.clubmanagement.dto.ClubDocumentRequest;
 import com.example.clubmanagement.dto.ClubDocumentResponse;
 import com.example.clubmanagement.dto.DocumentRevisionResponse;
+import com.example.clubmanagement.dto.DocumentTypeResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -21,6 +24,21 @@ public class ClubDocumentController {
 
     public ClubDocumentController(ClubDocumentService clubDocumentService) {
         this.clubDocumentService = clubDocumentService;
+    }
+
+    /**
+     * Lấy danh sách tất cả các loại tài liệu (documentType).
+     * GET /api/documents/types
+     */
+    @GetMapping("/types")
+    public ResponseEntity<List<DocumentTypeResponse>> getDocumentTypes() {
+        List<DocumentTypeResponse> types = Arrays.stream(DocumentType.values())
+                .map(type -> DocumentTypeResponse.builder()
+                        .value(type.name())
+                        .displayName(type.getDisplayName())
+                        .build())
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(types);
     }
 
     /**
