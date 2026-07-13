@@ -3,7 +3,6 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/EXE101-Backend-ClubManagement.iml" filepath="$PROJECT_DIR$/.idea/EXE101-Backend-ClubManagement.iml" />
-      <module fileurl="file://$PROJECT_DIR$/clubmanagement/clubmanagement.iml" filepath="$PROJECT_DIR$/clubmanagement/clubmanagement.iml" />
     </modules>
   </component>
 </project>
