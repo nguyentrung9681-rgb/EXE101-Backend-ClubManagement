@@ -6,20 +6,20 @@ import java.time.LocalDateTime;
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
 @Builder
-public class ClubEventResponse {
+public class ClubDocumentResponse {
     private Integer id;
     private Integer clubId;
     private String clubName;
+    private Integer eventId;
+    private String eventTitle;
     private String title;
-    private String description;
-    private LocalDateTime startTime;
-    private LocalDateTime endTime;
-    private String location;
+    private String documentType;
+    private String googleDocumentId;
+    private String documentUrl;
+    private String syncStatus;
+    private String contentSummary;
     private Integer createdByUserId;
     private String createdByName;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-    private String googleEventLink;
-    private String syncStatus;
-    private String meetLink;
 }
