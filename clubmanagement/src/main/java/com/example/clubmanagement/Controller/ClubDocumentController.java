@@ -11,6 +11,8 @@ import com.example.clubmanagement.dto.DocumentTypeResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.Arrays;
 import java.util.List;
@@ -145,20 +147,42 @@ public class ClubDocumentController {
     }
 
     /**
-     * Cấu hình quyền chia sẻ tài liệu Google Doc.
+     * Cấu hình quyền chia sẻ tài liệu Google Doc và trả về link chia sẻ.
      * POST /api/documents/{id}/share?role=commenter&userId=1
      */
     @PostMapping("/{id}/share")
     public ResponseEntity<?> shareDocument(
             @PathVariable Integer id,
+            @Parameter(description = "Quyền truy cập", schema = @Schema(allowableValues = {"reader", "commenter", "writer"}))
             @RequestParam(required = false, defaultValue = "commenter") String role,
             @RequestParam Integer userId
     ) {
         try {
-            clubDocumentService.shareDocument(id, role, userId);
-            return ResponseEntity.ok("Chia sẻ tài liệu thành công với vai trò: " + role);
+            String shareUrl = clubDocumentService.shareDocument(id, role, userId);
+            return ResponseEntity.ok(java.util.Map.of(
+                    "documentUrl", shareUrl,
+                    "role", role,
+                    "message", "Chia sẻ tài liệu thành công với vai trò: " + role
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi chia sẻ: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Xóa tài liệu khỏi hệ thống và Google Docs.
+     * DELETE /api/documents/{id}?userId=1
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteDocument(
+            @PathVariable Integer id,
+            @RequestParam Integer userId
+    ) {
+        try {
+            clubDocumentService.deleteDocument(id, userId);
+            return ResponseEntity.ok("Xóa tài liệu thành công");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi xóa tài liệu: " + e.getMessage());
         }
     }
 

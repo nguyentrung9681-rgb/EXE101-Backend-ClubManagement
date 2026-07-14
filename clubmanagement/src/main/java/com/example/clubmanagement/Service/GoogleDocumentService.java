@@ -145,4 +145,24 @@ public class GoogleDocumentService {
         }
         return text;
     }
+
+    /**
+     * Xóa tài liệu trên Google Drive.
+     */
+    public void deleteDocument(String documentId, GoogleAccount account) throws Exception {
+        GoogleAccount activeAccount = googleCalendarService.refreshAccessToken(account);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(activeAccount.getAccessToken());
+
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        String url = "https://www.googleapis.com/drive/v3/files/" + documentId;
+
+        restTemplate.exchange(
+                url,
+                HttpMethod.DELETE,
+                entity,
+                Void.class
+        );
+    }
 }
