@@ -45,11 +45,23 @@ public class ClubDocumentController {
 
     /**
      * Tạo tài liệu mới và liên kết Google Doc.
-     * POST /api/documents?userId=1
+     * POST /api/documents?userId=1&clubId=2&title=xxx&type=EVENT
      */
     @PostMapping
-    public ResponseEntity<?> createDocument(@RequestBody ClubDocumentRequest request, @RequestParam Integer userId) {
+    public ResponseEntity<?> createDocument(
+            @RequestParam Integer userId,
+            @RequestParam Integer clubId,
+            @RequestParam(required = false) Integer eventId,
+            @RequestParam String title,
+            @RequestParam DocumentType type
+    ) {
         try {
+            ClubDocumentRequest request = ClubDocumentRequest.builder()
+                    .clubId(clubId)
+                    .eventId(eventId)
+                    .title(title)
+                    .documentType(type.name())
+                    .build();
             ClubDocument doc = clubDocumentService.createDocument(request, userId);
             return ResponseEntity.ok(mapToResponse(doc));
         } catch (Exception e) {
@@ -59,15 +71,18 @@ public class ClubDocumentController {
 
     /**
      * Lấy danh sách tài liệu của một Câu lạc bộ có hỗ trợ lọc, tìm kiếm và sắp xếp.
-     * GET /api/documents/club/{clubId}?userId=1&search=xyz&type=MEETING_MINUTES&sortBy=title&sortDir=asc
+     * GET /api/documents/club/{clubId}?userId=1&search=xyz&type=EVENT&sortBy=title&sortDir=asc
      */
     @GetMapping("/club/{clubId}")
     public ResponseEntity<?> getClubDocuments(
             @PathVariable Integer clubId,
             @RequestParam Integer userId,
             @RequestParam(required = false) String search,
+            @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY"}))
             @RequestParam(required = false) String type,
+            @Parameter(description = "Sắp xếp theo trường", schema = @Schema(allowableValues = {"title", "date"}))
             @RequestParam(required = false) String sortBy,
+            @Parameter(description = "Chiều sắp xếp", schema = @Schema(allowableValues = {"asc", "desc"}))
             @RequestParam(required = false) String sortDir
     ) {
         try {
