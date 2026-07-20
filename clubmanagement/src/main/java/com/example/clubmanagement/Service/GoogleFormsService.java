@@ -1,9 +1,11 @@
 package com.example.clubmanagement.Service;
 
+import com.example.clubmanagement.Entity.Club;
 import com.example.clubmanagement.Entity.GoogleAccount;
 import com.example.clubmanagement.Entity.GoogleForm;
 import com.example.clubmanagement.Entity.SheetFormType;
 import com.example.clubmanagement.Entity.User;
+import com.example.clubmanagement.Repository.ClubRepository;
 import com.example.clubmanagement.Repository.GoogleAccountRepository;
 import com.example.clubmanagement.Repository.GoogleFormRepository;
 import com.example.clubmanagement.Repository.UserRepository;
@@ -35,6 +37,8 @@ public class GoogleFormsService {
     private final GoogleFormRepository googleFormRepository;
     private final GoogleCalendarService googleCalendarService;
     private final UserRepository userRepository;
+    private final ClubRepository clubRepository;
+    private final ClubPermissionService clubPermissionService;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -42,11 +46,15 @@ public class GoogleFormsService {
     public GoogleFormsService(GoogleAccountRepository googleAccountRepository,
                               GoogleFormRepository googleFormRepository,
                               GoogleCalendarService googleCalendarService,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              ClubRepository clubRepository,
+                              ClubPermissionService clubPermissionService) {
         this.googleAccountRepository = googleAccountRepository;
         this.googleFormRepository = googleFormRepository;
         this.googleCalendarService = googleCalendarService;
         this.userRepository = userRepository;
+        this.clubRepository = clubRepository;
+        this.clubPermissionService = clubPermissionService;
     }
 
     /**
@@ -57,37 +65,53 @@ public class GoogleFormsService {
                 .queryParam("client_id", clientId)
                 .queryParam("redirect_uri", redirectUri)
                 .queryParam("response_type", "code")
-                .queryParam("scope", "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/forms.body https://www.googleapis.com/auth/forms.responses.readonly https://www.googleapis.com/auth/drive.file")
+                .queryParam("scope", "https://www.googleapis.com/auth/userinfo.email " +
+                        "https://www.googleapis.com/auth/forms.body " +
+                        "https://www.googleapis.com/auth/forms.responses.readonly " +
+                        "https://www.googleapis.com/auth/drive.file")
                 .queryParam("access_type", "offline")
                 .queryParam("prompt", "consent")
                 .queryParam("state", userId.toString())
                 .build().toUriString();
     }
 
+    /**
+     * Lấy tài khoản Google hợp lệ (tự động làm mới access token nếu cần).
+     */
     private GoogleAccount getActiveGoogleAccount(Integer userId) throws Exception {
         GoogleAccount account = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(userId)
-                .orElseThrow(() -> new RuntimeException("Tài khoản Google chưa được kết nối! Vui lòng liên kết tài khoản trước."));
+                .orElseThrow(() -> new RuntimeException(
+                        "Tài khoản Google chưa được kết nối! Vui lòng liên kết tài khoản trước."));
         return googleCalendarService.refreshAccessToken(account);
     }
 
-    /**
-     * Lấy danh sách các biểu mẫu trong database của người dùng.
-     */
-    public List<GoogleForm> getFormsByUser(Integer userId) {
-        return googleFormRepository.findByUserUserId(userId);
-    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // CREATE — Chỉ PRESIDENT / TREASURER
+    // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Tạo một Google Form mới và lưu thông tin vào database.
+     * Tạo một Google Form mới trong môi trường CLB chỉ định.
+     * Yêu cầu: người dùng là PRESIDENT hoặc TREASURER của CLB đó.
+     *
+     * @param userId  ID người dùng thực hiện thao tác
+     * @param clubId  ID của CLB mà Form được tạo trong đó
+     * @param title   Tiêu đề Google Form
+     * @param type    Loại form: EVENT hoặc CLUB_ACTIVITIES
      */
     @Transactional
-    public GoogleForm createForm(Integer userId, String title, SheetFormType type) throws Exception {
+    public GoogleForm createForm(Integer userId, Integer clubId, String title, SheetFormType type) throws Exception {
+        // ── Kiểm tra phân quyền ──
+        clubPermissionService.requireCanCreate(userId, clubId);
+
         if (type == null) {
             throw new IllegalArgumentException("Loại (type) là bắt buộc! Vui lòng chọn EVENT hoặc CLUB_ACTIVITIES.");
         }
+
         GoogleAccount activeAccount = getActiveGoogleAccount(userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng trong hệ thống!"));
+        Club club = clubRepository.findById(clubId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy CLB trong hệ thống!"));
 
         // Gọi Google Forms API để tạo file form
         HttpHeaders headers = new HttpHeaders();
@@ -123,15 +147,39 @@ public class GoogleFormsService {
                 .formUrl(formUrl)
                 .responderUri(responderUri)
                 .user(user)
+                .club(club)
                 .build();
 
         return googleFormRepository.save(googleForm);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // READ — Mọi thành viên ACTIVE
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
-     * Đọc cấu trúc chi tiết của một Google Form.
+     * Lấy danh sách Google Form thuộc CLB chỉ định.
+     * Yêu cầu: người dùng là thành viên ACTIVE của CLB đó.
+     * Không hiển thị Form của CLB khác.
      */
-    public Map<String, Object> getFormDetails(Integer userId, String formId) throws Exception {
+    public List<GoogleForm> getFormsByClub(Integer userId, Integer clubId) {
+        clubPermissionService.requireCanView(userId, clubId);
+        return googleFormRepository.findByClubId(clubId);
+    }
+
+    /**
+     * Lấy chi tiết cấu trúc câu hỏi của Google Form.
+     * Yêu cầu: người dùng là thành viên ACTIVE của CLB sở hữu Form đó.
+     */
+    public Map<String, Object> getFormDetails(Integer userId, Integer clubId, String formId) throws Exception {
+        // Kiểm tra quyền xem
+        clubPermissionService.requireCanView(userId, clubId);
+
+        // Kiểm tra form thuộc CLB đang thao tác
+        googleFormRepository.findByFormIdAndClubId(formId, clubId)
+                .orElseThrow(() -> new SecurityException(
+                        "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
+
         GoogleAccount activeAccount = getActiveGoogleAccount(userId);
 
         HttpHeaders headers = new HttpHeaders();
@@ -150,8 +198,17 @@ public class GoogleFormsService {
 
     /**
      * Lấy các phản hồi (responses) của Google Form.
+     * Yêu cầu: người dùng là thành viên ACTIVE của CLB sở hữu Form đó.
      */
-    public Map<String, Object> getFormResponses(Integer userId, String formId) throws Exception {
+    public Map<String, Object> getFormResponses(Integer userId, Integer clubId, String formId) throws Exception {
+        // Kiểm tra quyền xem
+        clubPermissionService.requireCanView(userId, clubId);
+
+        // Kiểm tra form thuộc CLB đang thao tác
+        googleFormRepository.findByFormIdAndClubId(formId, clubId)
+                .orElseThrow(() -> new SecurityException(
+                        "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
+
         GoogleAccount activeAccount = getActiveGoogleAccount(userId);
 
         HttpHeaders headers = new HttpHeaders();
@@ -168,11 +225,26 @@ public class GoogleFormsService {
         return objectMapper.readValue(response.getBody(), Map.class);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // COMMENT (thêm câu hỏi) — Mọi thành viên ACTIVE
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
      * Thêm câu hỏi vào Google Form sử dụng batchUpdate.
+     * Yêu cầu: người dùng là thành viên ACTIVE của CLB sở hữu Form đó.
+     * (Cả PRESIDENT, TREASURER lẫn MEMBER đều có thể thêm câu hỏi)
      */
     @Transactional
-    public String addQuestion(Integer userId, String formId, GoogleFormQuestionRequest questionRequest) throws Exception {
+    public String addQuestion(Integer userId, Integer clubId, String formId,
+                              GoogleFormQuestionRequest questionRequest) throws Exception {
+        // Kiểm tra quyền comment
+        clubPermissionService.requireCanComment(userId, clubId);
+
+        // Kiểm tra form thuộc CLB đang thao tác
+        googleFormRepository.findByFormIdAndClubId(formId, clubId)
+                .orElseThrow(() -> new SecurityException(
+                        "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
+
         GoogleAccount activeAccount = getActiveGoogleAccount(userId);
 
         HttpHeaders headers = new HttpHeaders();
@@ -214,7 +286,6 @@ public class GoogleFormsService {
         item.put("questionItem", questionItem);
 
         createItem.put("item", item);
-        // Chèn vào vị trí đầu tiên
         Map<String, Object> location = new HashMap<>();
         location.put("index", 0);
         createItem.put("location", location);
@@ -236,17 +307,26 @@ public class GoogleFormsService {
         return response.getBody();
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // DELETE — Chỉ PRESIDENT / TREASURER
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
-     * Xóa Google Form khỏi database và xóa file trên Drive của người dùng.
+     * Xóa Google Form khỏi hệ thống và Google Drive.
+     * Yêu cầu: người dùng là PRESIDENT hoặc TREASURER của CLB sở hữu Form đó.
      */
     @Transactional
-    public void deleteForm(Integer userId, String formId) throws Exception {
-        GoogleForm googleForm = googleFormRepository.findByFormIdAndUserUserId(formId, userId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy biểu mẫu trong hệ thống hoặc bạn không có quyền xóa!"));
+    public void deleteForm(Integer userId, Integer clubId, String formId) throws Exception {
+        // Kiểm tra quyền xóa
+        clubPermissionService.requireCanDelete(userId, clubId);
+
+        // Lấy form và kiểm tra thuộc CLB này
+        GoogleForm googleForm = googleFormRepository.findByFormIdAndClubId(formId, clubId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Không tìm thấy biểu mẫu trong CLB này hoặc bạn không có quyền xóa!"));
 
         GoogleAccount activeAccount = getActiveGoogleAccount(userId);
 
-        // Gọi Google Drive API để xóa file biểu mẫu
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(activeAccount.getAccessToken());
         HttpEntity<Void> entity = new HttpEntity<>(headers);
@@ -262,5 +342,17 @@ public class GoogleFormsService {
         }
 
         googleFormRepository.delete(googleForm);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Legacy methods (giữ để không break code khác nếu có)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @deprecated Dùng {@link #getFormsByClub(Integer, Integer)} thay thế.
+     */
+    @Deprecated
+    public List<GoogleForm> getFormsByUser(Integer userId) {
+        return googleFormRepository.findByUserUserId(userId);
     }
 }

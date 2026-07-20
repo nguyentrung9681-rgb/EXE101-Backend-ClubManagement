@@ -10,4 +10,8 @@ import java.util.Optional;
 public interface GoogleFormRepository extends JpaRepository<GoogleForm, Integer> {
     List<GoogleForm> findByUserUserId(Integer userId);
     Optional<GoogleForm> findByFormIdAndUserUserId(String formId, Integer userId);
+
+    // ─── Phân quyền theo CLB ───
+    List<GoogleForm> findByClubId(Integer clubId);
+    Optional<GoogleForm> findByFormIdAndClubId(String formId, Integer clubId);
 }
