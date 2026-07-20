@@ -15,6 +15,7 @@ public class GoogleFormResponse {
     private String formUrl;
     private String responderUri;
     private Integer userId;
+    private Integer clubId;       // CLB sở hữu file này
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

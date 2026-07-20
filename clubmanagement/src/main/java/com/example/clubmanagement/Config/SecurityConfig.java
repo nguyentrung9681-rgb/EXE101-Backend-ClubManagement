@@ -52,7 +52,11 @@ public class SecurityConfig {
                                 "/api/clubs/**",
                                 "/api/events/**",
                                 "/api/users/**",
-                                "/api/documents/**"
+                                "/api/documents/**",
+                                "/api/trello/**",
+                                "/api/tasks/**",
+                                "/api/trello/callback",
+                                "/api/trello/webhook/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

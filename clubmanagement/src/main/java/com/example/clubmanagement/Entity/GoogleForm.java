@@ -37,6 +37,14 @@ public class GoogleForm {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    /**
+     * CLB sở hữu file Google Form này.
+     * Chỉ thành viên ACTIVE của CLB này mới được xem/tạo/xóa.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "club_id")
+    private Club club;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

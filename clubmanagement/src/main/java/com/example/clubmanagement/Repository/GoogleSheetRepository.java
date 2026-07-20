@@ -10,4 +10,8 @@ import java.util.Optional;
 public interface GoogleSheetRepository extends JpaRepository<GoogleSheet, Integer> {
     List<GoogleSheet> findByUserUserId(Integer userId);
     Optional<GoogleSheet> findBySpreadsheetIdAndUserUserId(String spreadsheetId, Integer userId);
+
+    // ─── Phân quyền theo CLB ───
+    List<GoogleSheet> findByClubId(Integer clubId);
+    Optional<GoogleSheet> findBySpreadsheetIdAndClubId(String spreadsheetId, Integer clubId);
 }

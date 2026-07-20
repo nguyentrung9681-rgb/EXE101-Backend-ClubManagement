@@ -3,6 +3,7 @@ package com.example.clubmanagement.Entity;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Entity
 @Table(name = "google_sheets")
@@ -33,6 +34,14 @@ public class GoogleSheet {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
+    /**
+     * CLB sở hữu file Google Sheet này.
+     * Chỉ thành viên ACTIVE của CLB này mới được xem/tạo/xóa.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "club_id")
+    private Club club;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
