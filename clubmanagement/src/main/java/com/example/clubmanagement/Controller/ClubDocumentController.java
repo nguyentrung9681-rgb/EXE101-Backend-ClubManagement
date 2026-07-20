@@ -11,6 +11,8 @@ import com.example.clubmanagement.dto.DocumentTypeResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.Arrays;
 import java.util.List;
@@ -43,11 +45,23 @@ public class ClubDocumentController {
 
     /**
      * Tạo tài liệu mới và liên kết Google Doc.
-     * POST /api/documents?userId=1
+     * POST /api/documents?userId=1&clubId=2&title=xxx&type=EVENT
      */
     @PostMapping
-    public ResponseEntity<?> createDocument(@RequestBody ClubDocumentRequest request, @RequestParam Integer userId) {
+    public ResponseEntity<?> createDocument(
+            @RequestParam Integer userId,
+            @RequestParam Integer clubId,
+            @RequestParam(required = false) Integer eventId,
+            @RequestParam String title,
+            @RequestParam DocumentType type
+    ) {
         try {
+            ClubDocumentRequest request = ClubDocumentRequest.builder()
+                    .clubId(clubId)
+                    .eventId(eventId)
+                    .title(title)
+                    .documentType(type.name())
+                    .build();
             ClubDocument doc = clubDocumentService.createDocument(request, userId);
             return ResponseEntity.ok(mapToResponse(doc));
         } catch (Exception e) {
@@ -57,15 +71,18 @@ public class ClubDocumentController {
 
     /**
      * Lấy danh sách tài liệu của một Câu lạc bộ có hỗ trợ lọc, tìm kiếm và sắp xếp.
-     * GET /api/documents/club/{clubId}?userId=1&search=xyz&type=MEETING_MINUTES&sortBy=title&sortDir=asc
+     * GET /api/documents/club/{clubId}?userId=1&search=xyz&type=EVENT&sortBy=title&sortDir=asc
      */
     @GetMapping("/club/{clubId}")
     public ResponseEntity<?> getClubDocuments(
             @PathVariable Integer clubId,
             @RequestParam Integer userId,
             @RequestParam(required = false) String search,
+            @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY", "MEETING_MINUTES", "EVENT_PLAN", "REPORT", "FINANCE", "OTHER"}))
             @RequestParam(required = false) String type,
+            @Parameter(description = "Sắp xếp theo trường", schema = @Schema(allowableValues = {"title", "date"}))
             @RequestParam(required = false) String sortBy,
+            @Parameter(description = "Chiều sắp xếp", schema = @Schema(allowableValues = {"asc", "desc"}))
             @RequestParam(required = false) String sortDir
     ) {
         try {
@@ -145,20 +162,42 @@ public class ClubDocumentController {
     }
 
     /**
-     * Cấu hình quyền chia sẻ tài liệu Google Doc.
+     * Cấu hình quyền chia sẻ tài liệu Google Doc và trả về link chia sẻ.
      * POST /api/documents/{id}/share?role=commenter&userId=1
      */
     @PostMapping("/{id}/share")
     public ResponseEntity<?> shareDocument(
             @PathVariable Integer id,
+            @Parameter(description = "Quyền truy cập", schema = @Schema(allowableValues = {"reader", "commenter", "writer"}))
             @RequestParam(required = false, defaultValue = "commenter") String role,
             @RequestParam Integer userId
     ) {
         try {
-            clubDocumentService.shareDocument(id, role, userId);
-            return ResponseEntity.ok("Chia sẻ tài liệu thành công với vai trò: " + role);
+            String shareUrl = clubDocumentService.shareDocument(id, role, userId);
+            return ResponseEntity.ok(java.util.Map.of(
+                    "documentUrl", shareUrl,
+                    "role", role,
+                    "message", "Chia sẻ tài liệu thành công với vai trò: " + role
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi chia sẻ: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Xóa tài liệu khỏi hệ thống và Google Docs.
+     * DELETE /api/documents/{id}?userId=1
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteDocument(
+            @PathVariable Integer id,
+            @RequestParam Integer userId
+    ) {
+        try {
+            clubDocumentService.deleteDocument(id, userId);
+            return ResponseEntity.ok("Xóa tài liệu thành công");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi xóa tài liệu: " + e.getMessage());
         }
     }
 

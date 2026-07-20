@@ -243,7 +243,7 @@ public class ClubDocumentService {
     }
 
     @Transactional
-    public void shareDocument(Integer documentId, String role, Integer userId) throws Exception {
+    public String shareDocument(Integer documentId, String role, Integer userId) throws Exception {
         ClubDocument doc = clubDocumentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy tài liệu!"));
 
@@ -256,6 +256,12 @@ public class ClubDocumentService {
 
         String targetRole = (role != null && !role.trim().isEmpty()) ? role.trim() : "commenter";
         googleDocumentService.shareDocument(doc.getGoogleDocumentId(), targetRole, googleAccount);
+
+        String shareUrl = doc.getDocumentUrl();
+        if (shareUrl == null || shareUrl.trim().isEmpty()) {
+            shareUrl = "https://docs.google.com/document/d/" + doc.getGoogleDocumentId() + "/edit";
+        }
+        return shareUrl;
     }
 
     public List<ClubDocument> getDocumentsByEvent(Integer eventId, Integer userId) {
@@ -277,5 +283,39 @@ public class ClubDocumentService {
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy tài liệu!"));
         checkReadPermission(doc.getClub().getId(), userId);
         return documentRevisionRepository.findByClubDocumentIdOrderByVersionDesc(id);
+    }
+
+    /**
+     * Xóa tài liệu khỏi hệ thống và trên Google Drive.
+     */
+    @Transactional
+    public void deleteDocument(Integer id, Integer userId) throws Exception {
+        ClubDocument doc = clubDocumentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy tài liệu!"));
+
+        // 1. Phân quyền: chỉ PRESIDENT hoặc TREASURER của CLB mới có quyền xóa tài liệu
+        checkWritePermission(doc.getClub().getId(), userId);
+
+        // 2. Thử xóa tài liệu trên Google Drive nếu có liên kết Google Doc
+        if (doc.getGoogleDocumentId() != null && !doc.getGoogleDocumentId().trim().isEmpty()) {
+            try {
+                Optional<GoogleAccount> googleAccountOpt = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(doc.getCreatedBy().getUserId());
+                if (googleAccountOpt.isPresent()) {
+                    googleDocumentService.deleteDocument(doc.getGoogleDocumentId(), googleAccountOpt.get());
+                }
+            } catch (Exception e) {
+                // Log lỗi nhưng không chặn việc xóa ở DB
+                System.err.println("Không thể xóa Google Doc trên Drive: " + e.getMessage());
+            }
+        }
+
+        // 3. Xóa các bản revisions liên quan
+        List<DocumentRevision> revisions = documentRevisionRepository.findByClubDocumentIdOrderByVersionDesc(id);
+        if (revisions != null && !revisions.isEmpty()) {
+            documentRevisionRepository.deleteAll(revisions);
+        }
+
+        // 4. Xóa tài liệu khỏi database
+        clubDocumentRepository.delete(doc);
     }
 }

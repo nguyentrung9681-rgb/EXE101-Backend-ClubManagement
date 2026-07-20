@@ -1,6 +1,8 @@
 package com.example.clubmanagement.Enum;
 
 public enum DocumentType {
+    EVENT("Event"),
+    CLUB_ACTIVITY("Club Activity"),
     MEETING_MINUTES("Biên bản họp"),
     EVENT_PLAN("Kế hoạch sự kiện"),
     REPORT("Báo cáo"),
