@@ -78,7 +78,7 @@ public class ClubDocumentController {
             @PathVariable Integer clubId,
             @RequestParam Integer userId,
             @RequestParam(required = false) String search,
-            @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY"}))
+            @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY", "MEETING_MINUTES", "EVENT_PLAN", "REPORT", "FINANCE", "OTHER"}))
             @RequestParam(required = false) String type,
             @Parameter(description = "Sắp xếp theo trường", schema = @Schema(allowableValues = {"title", "date"}))
             @RequestParam(required = false) String sortBy,
