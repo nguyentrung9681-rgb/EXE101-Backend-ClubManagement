@@ -9,5 +9,6 @@ public class ClubDocumentRequest {
     private Integer clubId;
     private Integer eventId; // nullable
     private String title;
-    private String documentType; // EVENT, CLUB_ACTIVITY
+    private String category; // EVENT, CLUB_ACTIVITY
+    private String documentType; // MEETING_MINUTES, EVENT_PLAN, REPORT, FINANCE, OTHER
 }

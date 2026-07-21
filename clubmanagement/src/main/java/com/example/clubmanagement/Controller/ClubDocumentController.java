@@ -2,10 +2,12 @@ package com.example.clubmanagement.Controller;
 
 import com.example.clubmanagement.Entity.ClubDocument;
 import com.example.clubmanagement.Entity.DocumentRevision;
+import com.example.clubmanagement.Enum.DocumentCategory;
 import com.example.clubmanagement.Enum.DocumentType;
 import com.example.clubmanagement.Service.ClubDocumentService;
 import com.example.clubmanagement.dto.ClubDocumentRequest;
 import com.example.clubmanagement.dto.ClubDocumentResponse;
+import com.example.clubmanagement.dto.DocumentCategoryResponse;
 import com.example.clubmanagement.dto.DocumentRevisionResponse;
 import com.example.clubmanagement.dto.DocumentTypeResponse;
 import org.springframework.http.HttpStatus;
@@ -44,8 +46,23 @@ public class ClubDocumentController {
     }
 
     /**
+     * Lấy danh sách các danh mục tài liệu phục vụ tab lọc trên trang web (EVENT, CLUB_ACTIVITY).
+     * GET /api/documents/categories
+     */
+    @GetMapping("/categories")
+    public ResponseEntity<List<DocumentCategoryResponse>> getDocumentCategories() {
+        List<DocumentCategoryResponse> categories = Arrays.stream(DocumentCategory.values())
+                .map(cat -> DocumentCategoryResponse.builder()
+                        .value(cat.name())
+                        .displayName(cat.getDisplayName())
+                        .build())
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(categories);
+    }
+
+    /**
      * Tạo tài liệu mới và liên kết Google Doc.
-     * POST /api/documents?userId=1&clubId=2&title=xxx&type=EVENT
+     * POST /api/documents?userId=1&clubId=2&title=xxx&category=EVENT&type=MEETING_MINUTES
      */
     @PostMapping
     public ResponseEntity<?> createDocument(
@@ -53,6 +70,9 @@ public class ClubDocumentController {
             @RequestParam Integer clubId,
             @RequestParam(required = false) Integer eventId,
             @RequestParam String title,
+            @Parameter(description = "Danh mục lọc trên web", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY"}))
+            @RequestParam(required = false) DocumentCategory category,
+            @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"MEETING_MINUTES", "EVENT_PLAN", "REPORT", "FINANCE", "OTHER"}))
             @RequestParam DocumentType type
     ) {
         try {
@@ -60,6 +80,7 @@ public class ClubDocumentController {
                     .clubId(clubId)
                     .eventId(eventId)
                     .title(title)
+                    .category(category != null ? category.name() : null)
                     .documentType(type.name())
                     .build();
             ClubDocument doc = clubDocumentService.createDocument(request, userId);
@@ -71,14 +92,16 @@ public class ClubDocumentController {
 
     /**
      * Lấy danh sách tài liệu của một Câu lạc bộ có hỗ trợ lọc, tìm kiếm và sắp xếp.
-     * GET /api/documents/club/{clubId}?userId=1&search=xyz&type=EVENT&sortBy=title&sortDir=asc
+     * GET /api/documents/club/{clubId}?userId=1&search=xyz&category=EVENT&type=MEETING_MINUTES&sortBy=title&sortDir=asc
      */
     @GetMapping("/club/{clubId}")
     public ResponseEntity<?> getClubDocuments(
             @PathVariable Integer clubId,
             @RequestParam Integer userId,
             @RequestParam(required = false) String search,
-            @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY", "MEETING_MINUTES", "EVENT_PLAN", "REPORT", "FINANCE", "OTHER"}))
+            @Parameter(description = "Danh mục lọc trên web (Tab: Event / Club Activity)", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY"}))
+            @RequestParam(required = false) String category,
+            @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"MEETING_MINUTES", "EVENT_PLAN", "REPORT", "FINANCE", "OTHER"}))
             @RequestParam(required = false) String type,
             @Parameter(description = "Sắp xếp theo trường", schema = @Schema(allowableValues = {"title", "date"}))
             @RequestParam(required = false) String sortBy,
@@ -86,7 +109,7 @@ public class ClubDocumentController {
             @RequestParam(required = false) String sortDir
     ) {
         try {
-            List<ClubDocumentResponse> list = clubDocumentService.getDocumentsByClubFiltered(clubId, search, type, sortBy, sortDir, userId).stream()
+            List<ClubDocumentResponse> list = clubDocumentService.getDocumentsByClubFiltered(clubId, search, category, type, sortBy, sortDir, userId).stream()
                     .map(this::mapToResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(list);
@@ -203,6 +226,7 @@ public class ClubDocumentController {
 
     private ClubDocumentResponse mapToResponse(ClubDocument doc) {
         if (doc == null) return null;
+        String catName = doc.getCategory() != null ? doc.getCategory().name() : (doc.getEvent() != null ? DocumentCategory.EVENT.name() : DocumentCategory.CLUB_ACTIVITY.name());
         return ClubDocumentResponse.builder()
                 .id(doc.getId())
                 .clubId(doc.getClub() != null ? doc.getClub().getId() : null)
@@ -210,6 +234,7 @@ public class ClubDocumentController {
                 .eventId(doc.getEvent() != null ? doc.getEvent().getId() : null)
                 .eventTitle(doc.getEvent() != null ? doc.getEvent().getTitle() : null)
                 .title(doc.getTitle())
+                .category(catName)
                 .documentType(doc.getDocumentType() != null ? doc.getDocumentType().name() : null)
                 .googleDocumentId(doc.getGoogleDocumentId())
                 .documentUrl(doc.getDocumentUrl())

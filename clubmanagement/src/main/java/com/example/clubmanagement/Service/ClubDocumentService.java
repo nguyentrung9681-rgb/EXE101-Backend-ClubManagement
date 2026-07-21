@@ -94,11 +94,24 @@ public class ClubDocumentService {
         GoogleAccount googleAccount = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(userId)
                 .orElseThrow(() -> new RuntimeException("Vui lòng liên kết tài khoản Google trước khi tạo tài liệu!"));
 
+        DocumentCategory category = null;
+        if (request.getCategory() != null && !request.getCategory().trim().isEmpty()) {
+            try {
+                category = DocumentCategory.valueOf(request.getCategory().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                // ignore
+            }
+        }
+        if (category == null) {
+            category = (event != null) ? DocumentCategory.EVENT : DocumentCategory.CLUB_ACTIVITY;
+        }
+
         // 3. Tạo record DB local (trạng thái Pending)
         ClubDocument document = ClubDocument.builder()
                 .club(club)
                 .event(event)
                 .title(request.getTitle())
+                .category(category)
                 .documentType(DocumentType.valueOf(request.getDocumentType().toUpperCase()))
                 .createdBy(creator)
                 .syncStatus(SyncStatus.PENDING)
@@ -216,8 +229,17 @@ public class ClubDocumentService {
         return clubDocumentRepository.findByClubId(clubId);
     }
 
-    public List<ClubDocument> getDocumentsByClubFiltered(Integer clubId, String search, String type, String sortBy, String sortDir, Integer userId) {
+    public List<ClubDocument> getDocumentsByClubFiltered(Integer clubId, String search, String category, String type, String sortBy, String sortDir, Integer userId) {
         checkReadPermission(clubId, userId);
+
+        DocumentCategory docCategory = null;
+        if (category != null && !category.trim().isEmpty()) {
+            try {
+                docCategory = DocumentCategory.valueOf(category.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                // Bỏ qua nếu category không hợp lệ
+            }
+        }
 
         DocumentType docType = null;
         if (type != null && !type.trim().isEmpty()) {
@@ -239,7 +261,7 @@ public class ClubDocumentService {
         }
 
         String searchPattern = (search != null && !search.trim().isEmpty()) ? search.trim() : null;
-        return clubDocumentRepository.findClubDocumentsFiltered(clubId, searchPattern, docType, sort);
+        return clubDocumentRepository.findClubDocumentsFiltered(clubId, searchPattern, docCategory, docType, sort);
     }
 
     @Transactional
