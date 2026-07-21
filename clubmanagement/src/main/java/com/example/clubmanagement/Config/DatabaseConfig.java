@@ -18,11 +18,19 @@ public class DatabaseConfig {
                 jdbcTemplate.execute("ALTER TABLE club_member ADD CONSTRAINT club_member_role_check CHECK (role IN ('PRESIDENT', 'DEPARTMENT_HEAD', 'TREASURER', 'MEMBER'))");
                 System.out.println("=== Cập nhật database check constraint club_member_role_check thành công! ===");
 
+                // Migrate existing data in club_document table before altering check constraint
+                jdbcTemplate.execute("UPDATE club_document SET category = 'EVENT' WHERE (category IS NULL OR category = '') AND document_type = 'EVENT'");
+                jdbcTemplate.execute("UPDATE club_document SET category = 'CLUB_ACTIVITY' WHERE (category IS NULL OR category = '') AND document_type = 'CLUB_ACTIVITY'");
+                
+                jdbcTemplate.execute("UPDATE club_document SET document_type = 'EVENT_PLAN' WHERE document_type = 'EVENT'");
+                jdbcTemplate.execute("UPDATE club_document SET document_type = 'OTHER' WHERE document_type = 'CLUB_ACTIVITY'");
+                jdbcTemplate.execute("UPDATE club_document SET document_type = 'OTHER' WHERE document_type NOT IN ('MEETING_MINUTES', 'EVENT_PLAN', 'REPORT', 'FINANCE', 'OTHER')");
+
                 // Drop the outdated document type check constraint
                 jdbcTemplate.execute("ALTER TABLE club_document DROP CONSTRAINT IF EXISTS club_document_document_type_check");
                 // Re-add it with the current document types
                 jdbcTemplate.execute("ALTER TABLE club_document ADD CONSTRAINT club_document_document_type_check CHECK (document_type IN ('MEETING_MINUTES', 'EVENT_PLAN', 'REPORT', 'FINANCE', 'OTHER'))");
-                System.out.println("=== Cập nhật database check constraint club_document_document_type_check thành công! ===");
+                System.out.println("=== Cập nhật dữ liệu cũ & database check constraint club_document_document_type_check thành công! ===");
             } catch (Exception e) {
                 System.err.println("=== Lỗi khi cập nhật database check constraint: " + e.getMessage() + " ===");
             }
