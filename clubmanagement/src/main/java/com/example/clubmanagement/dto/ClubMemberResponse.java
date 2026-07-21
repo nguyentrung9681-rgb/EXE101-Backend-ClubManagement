@@ -15,5 +15,7 @@ public class ClubMemberResponse {
     private String email;
     private String role;
     private String status;
+    private Integer departmentId;
+    private String departmentName;
     private LocalDateTime joinedAt;
 }

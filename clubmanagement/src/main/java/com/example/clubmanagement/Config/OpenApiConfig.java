@@ -19,14 +19,41 @@ public class OpenApiConfig {
 
     @Bean
     public OpenAPI customOpenAPI() {
-        Server localServer = new Server();
-        localServer.setUrl("http://localhost:" + serverPort);
-        localServer.setDescription("Local Server");
+//        Server localServer = new Server();
+//        localServer.setUrl("http://localhost:" + serverPort);
+//        localServer.setDescription("Local Server");
+//
+//        Server ngrokServer = new Server();
+//        ngrokServer.setUrl("https://doorstep-disaster-platonic.ngrok-free.dev");
+//        ngrokServer.setDescription("Ngrok Server");
+//
+//        return new OpenAPI()
+//                .servers(List.of(localServer, ngrokServer))
+//                .addSecurityItem(
+//                        new SecurityRequirement().addList("Bearer Authentication")
+//                )
+//                .components(
+//                        new Components().addSecuritySchemes(
+//                                "Bearer Authentication",
+//                                createAPIKeyScheme()
+//                        )
+//                );
+        Server currentServer = new Server();
+        currentServer.setUrl("/");
+        currentServer.setDescription("Current Server");
 
         return new OpenAPI()
-                .servers(List.of(localServer))
-                .addSecurityItem(new SecurityRequirement().addList("Bearer Authentication"))
-                .components(new Components().addSecuritySchemes("Bearer Authentication", createAPIKeyScheme()));
+                .servers(List.of(currentServer))
+                .addSecurityItem(
+                        new SecurityRequirement()
+                                .addList("Bearer Authentication")
+                )
+                .components(
+                        new Components().addSecuritySchemes(
+                                "Bearer Authentication",
+                                createAPIKeyScheme()
+                        )
+                );
     }
 
     private SecurityScheme createAPIKeyScheme() {

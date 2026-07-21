@@ -7,6 +7,7 @@ import com.example.clubmanagement.Service.ClubService;
 import com.example.clubmanagement.dto.ClubRequest;
 import com.example.clubmanagement.dto.ClubResponse;
 import com.example.clubmanagement.dto.ClubMemberResponse;
+import com.example.clubmanagement.dto.UpdateMemberRoleDeptRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -175,6 +176,22 @@ public class ClubController {
         }
     }
 
+    /**
+     * Lấy danh sách thành viên đang hoạt động của Câu lạc bộ.
+     * GET /api/clubs/{clubId}/members
+     */
+    @GetMapping("/{clubId}/members")
+    public ResponseEntity<?> getClubMembers(@PathVariable Integer clubId) {
+        try {
+            List<ClubMemberResponse> members = clubService.getClubMembers(clubId).stream()
+                    .map(this::mapToClubMemberResponse)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(members);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
     private ClubMemberResponse mapToClubMemberResponse(ClubMember member) {
         if (member == null) return null;
         return ClubMemberResponse.builder()
@@ -186,7 +203,54 @@ public class ClubController {
                 .email(member.getUser() != null ? member.getUser().getEmail() : null)
                 .role(member.getRole() != null ? member.getRole().name() : null)
                 .status(member.getStatus() != null ? member.getStatus().name() : null)
+                .departmentId(member.getDepartment() != null ? member.getDepartment().getId() : null)
+                .departmentName(member.getDepartment() != null ? member.getDepartment().getName() : "None")
                 .joinedAt(member.getJoinedAt())
                 .build();
+    }
+
+    /**
+     * Cập nhật vai trò và phòng ban của thành viên (Chỉ chủ nhiệm mới có quyền).
+     * PUT /api/clubs/{clubId}/members/{memberId}?requesterUserId={id}&role={role}&departmentId={departmentId}
+     */
+    @PutMapping("/{clubId}/members/{memberId}")
+    public ResponseEntity<?> updateMemberRoleDept(
+            @PathVariable Integer clubId,
+            @PathVariable Integer memberId,
+            @RequestParam Integer requesterUserId,
+            @io.swagger.v3.oas.annotations.Parameter(schema = @io.swagger.v3.oas.annotations.media.Schema(allowableValues = {"DEPARTMENT_HEAD", "TREASURER", "MEMBER"}), description = "Vai trò mới gán cho thành viên")
+            @RequestParam(required = false) String role,
+            @RequestParam(required = false) Integer departmentId) {
+        try {
+            UpdateMemberRoleDeptRequest request = UpdateMemberRoleDeptRequest.builder()
+                    .role(role)
+                    .departmentId(departmentId)
+                    .build();
+            ClubMember updated = clubService.updateMemberRoleDept(clubId, memberId, requesterUserId, request);
+            return ResponseEntity.ok(mapToClubMemberResponse(updated));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    /**
+     * Tạm khóa/mở khóa thành viên câu lạc bộ (Chủ nhiệm chuyển trạng thái User thành INACTIVE).
+     * PUT /api/clubs/{clubId}/members/{memberId}/lock?requesterUserId={id}&lock={true|false}
+     */
+    @PutMapping("/{clubId}/members/{memberId}/lock")
+    public ResponseEntity<?> lockMember(
+            @PathVariable Integer clubId,
+            @PathVariable Integer memberId,
+            @RequestParam Integer requesterUserId,
+            @RequestParam boolean lock) {
+        try {
+            clubService.lockMember(clubId, memberId, requesterUserId, lock);
+            String message = lock ? "Đã khóa tài khoản thành viên thành công!" : "Đã mở khóa tài khoản thành viên thành công!";
+            Map<String, String> response = new HashMap<>();
+            response.put("message", message);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 }

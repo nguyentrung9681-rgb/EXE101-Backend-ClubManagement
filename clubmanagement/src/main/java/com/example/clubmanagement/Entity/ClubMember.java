@@ -35,6 +35,10 @@ public class ClubMember {
     @Column(name = "joined_at")
     private LocalDateTime joinedAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
+
     @PrePersist
     protected void onCreate() {
         if (status == null) {

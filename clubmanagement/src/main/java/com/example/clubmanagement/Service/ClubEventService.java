@@ -219,8 +219,6 @@ public class ClubEventService {
             }
             eventGoogleSyncRepository.delete(sync);
         }
-
-        clubEventRepository.delete(event);
     }
 
     public List<ClubEvent> getEventsByClubId(Integer clubId) {
@@ -337,7 +335,6 @@ public class ClubEventService {
         eventGoogleSyncRepository.save(sync);
         return event;
     }
-
     private void checkAndUpdateEventStatus(ClubEvent event) {
         String currentStatus = event.getStatus();
         if (currentStatus == null) {

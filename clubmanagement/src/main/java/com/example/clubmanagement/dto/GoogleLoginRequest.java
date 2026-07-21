@@ -2,7 +2,15 @@ package com.example.clubmanagement.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class GoogleLoginRequest {
 
     @NotBlank(message = "Google ID is required")
@@ -16,20 +24,5 @@ public class GoogleLoginRequest {
     private String fullName;
 
     private String avatarUrl;
-
-    public String getGoogleId() {
-        return googleId;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public String getFullName() {
-        return fullName;
-    }
-
-    public String getAvatarUrl() {
-        return avatarUrl;
-    }
 }
+

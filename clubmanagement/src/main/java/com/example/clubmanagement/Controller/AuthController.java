@@ -38,6 +38,23 @@ public class AuthController {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
+
+    // CASE 3: Đăng ký / Đăng nhập bằng tài khoản Google (Gmail)
+    @PostMapping("/google")
+    public ResponseEntity<?> googleAuth(@RequestBody GoogleLoginRequest googleLoginRequest) {
+        try {
+            AuthResponse response = authService.processGoogleUser(
+                    googleLoginRequest.getEmail(),
+                    googleLoginRequest.getFullName(),
+                    googleLoginRequest.getGoogleId(),
+                    googleLoginRequest.getAvatarUrl()
+            );
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<?> logout() {
         return ResponseEntity.ok(Map.of(

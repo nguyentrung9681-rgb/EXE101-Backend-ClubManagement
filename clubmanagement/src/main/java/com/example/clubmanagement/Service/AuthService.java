@@ -66,8 +66,8 @@ public class AuthService {
         User user = userRepository.findByUsernameOrEmail(loginInput, loginInput)
                 .orElseThrow(() -> new RuntimeException("Tài khoản hoặc email không tồn tại!"));
 
-        if ("BANNED".equals(user.getUserStatus())) {
-            throw new RuntimeException("Tài khoản này đã bị khóa!");
+        if ("BANNED".equals(user.getUserStatus()) || "INACTIVE".equals(user.getUserStatus())) {
+            throw new RuntimeException("Tài khoản này đã bị khóa hoặc không hoạt động!");
         }
 
         if (!"LOCAL".equals(user.getAuthProvider())) {
@@ -101,6 +101,10 @@ public class AuthService {
                 .or(() -> userRepository.findByEmail(email))
                 .orElse(null);
 
+        if (user != null && ("BANNED".equals(user.getUserStatus()) || "INACTIVE".equals(user.getUserStatus()))) {
+            throw new RuntimeException("Tài khoản này đã bị khóa hoặc không hoạt động!");
+        }
+
         if (user == null) {
             // Case 2: Đăng ký tự động bằng Google nếu chưa có tài khoản
             String baseUsername = email.split("@")[0];
@@ -128,6 +132,20 @@ public class AuthService {
             UserSetting setting = new UserSetting();
             setting.setUserId(user.getUserId());
             userSettingRepository.save(setting);
+        } else {
+            // Cập nhật thông tin Google nếu người dùng đã tồn tại nhưng chưa lưu googleId/avatarUrl
+            boolean updated = false;
+            if (user.getGoogleId() == null && googleId != null) {
+                user.setGoogleId(googleId);
+                updated = true;
+            }
+            if (user.getAvatarUrl() == null && avatarUrl != null) {
+                user.setAvatarUrl(avatarUrl);
+                updated = true;
+            }
+            if (updated) {
+                userRepository.save(user);
+            }
         }
 
         // Đọc cấu hình điều hướng CLB
@@ -136,12 +154,15 @@ public class AuthService {
 
         String token = tokenProvider.generateToken(user.getUsername());
 
-        // FIX: Sử dụng Builder giống như trên giúp an toàn thuộc tính
         return AuthResponse.builder()
                 .token(token)
+                .userId(user.getUserId())
+                .fullName(user.getFullName())
                 .username(user.getUsername())
                 .email(user.getEmail())
+                .authProvider(user.getAuthProvider())
                 .lastSelectedClubId(lastClubId)
+                .message("Đăng nhập/Đăng ký bằng Google thành công!")
                 .build();
     }
 }

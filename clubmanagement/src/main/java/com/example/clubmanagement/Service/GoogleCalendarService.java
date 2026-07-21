@@ -189,10 +189,12 @@ public class GoogleCalendarService {
 
         Map<String, String> start = new HashMap<>();
         start.put("dateTime", formatToIsoOffsetDateTime(event.getStartTime()));
+        start.put("timeZone", "Asia/Ho_Chi_Minh");
         body.put("start", start);
 
         Map<String, String> end = new HashMap<>();
         end.put("dateTime", formatToIsoOffsetDateTime(event.getEndTime()));
+        end.put("timeZone", "Asia/Ho_Chi_Minh");
         body.put("end", end);
 
         // Tạo yêu cầu sinh link Google Meet
@@ -206,7 +208,7 @@ public class GoogleCalendarService {
         body.put("conferenceData", conferenceData);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-        
+
         // Thêm conferenceDataVersion=1 vào url để Google tạo link Meet
         String url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1";
 
@@ -261,10 +263,12 @@ public class GoogleCalendarService {
 
         Map<String, String> start = new HashMap<>();
         start.put("dateTime", formatToIsoOffsetDateTime(event.getStartTime()));
+        start.put("timeZone", "Asia/Ho_Chi_Minh");
         body.put("start", start);
 
         Map<String, String> end = new HashMap<>();
         end.put("dateTime", formatToIsoOffsetDateTime(event.getEndTime()));
+        end.put("timeZone", "Asia/Ho_Chi_Minh");
         body.put("end", end);
 
         // Chỉ tạo yêu cầu sinh link Google Meet nếu sự kiện hiện tại chưa có link
@@ -345,6 +349,6 @@ public class GoogleCalendarService {
 
     private String formatToIsoOffsetDateTime(LocalDateTime localDateTime) {
         if (localDateTime == null) return null;
-        return localDateTime.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+        return localDateTime.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     }
 }

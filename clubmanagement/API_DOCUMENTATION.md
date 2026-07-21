@@ -91,7 +91,42 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
     Sai tài khoản hoặc mật khẩu!
     ```
 
-#### 3.1.3. Đăng xuất hệ thống (Logout)
+#### 3.1.3. Đăng ký / Đăng nhập bằng Google (Gmail)
+* **URL:** `/api/auth/google`
+* **Method:** `POST`
+* **Request Headers:**
+  * `Content-Type: application/json`
+
+* **Request Body:**
+```json
+{
+  "googleId": "109238409128309123456",
+  "email": "nguyenvana@gmail.com",
+  "fullName": "Nguyễn Văn A",
+  "avatarUrl": "https://lh3.googleusercontent.com/a/ac..."
+}
+```
+
+* **Responses:**
+  * **200 OK (Thành công - Đăng ký hoặc Đăng nhập tự động):**
+    ```json
+    {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "userId": 1,
+      "fullName": "Nguyễn Văn A",
+      "username": "nguyenvana",
+      "email": "nguyenvana@gmail.com",
+      "authProvider": "GOOGLE",
+      "lastSelectedClubId": null,
+      "message": "Đăng nhập/Đăng ký bằng Google thành công!"
+    }
+    ```
+  * **400 Bad Request (Tài khoản bị khóa hoặc thiếu dữ liệu):**
+    ```text
+    Tài khoản này đã bị khóa hoặc không hoạt động!
+    ```
+
+#### 3.1.4. Đăng xuất hệ thống (Logout)
 * **URL:** `/api/auth/logout`
 * **Method:** `POST`
 * **Response (200 OK):**
