@@ -1,6 +1,7 @@
 package com.example.clubmanagement.Repository;
 
 import com.example.clubmanagement.Entity.ClubDocument;
+import com.example.clubmanagement.Enum.DocumentCategory;
 import com.example.clubmanagement.Enum.DocumentType;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,12 +21,13 @@ public interface ClubDocumentRepository extends JpaRepository<ClubDocument, Inte
 
     @Query("SELECT d FROM ClubDocument d WHERE d.club.id = :clubId " +
            "AND (CAST(:search AS string) IS NULL OR LOWER(d.title) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) OR LOWER(d.contentSummary) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))) " +
+           "AND (:category IS NULL OR d.category = :category OR (d.category IS NULL AND (:category = com.example.clubmanagement.Enum.DocumentCategory.EVENT AND d.event IS NOT NULL)) OR (d.category IS NULL AND (:category = com.example.clubmanagement.Enum.DocumentCategory.CLUB_ACTIVITY AND d.event IS NULL))) " +
            "AND (:documentType IS NULL OR d.documentType = :documentType)")
     List<ClubDocument> findClubDocumentsFiltered(
             @Param("clubId") Integer clubId,
             @Param("search") String search,
+            @Param("category") DocumentCategory category,
             @Param("documentType") DocumentType documentType,
             Sort sort
     );
 }
-

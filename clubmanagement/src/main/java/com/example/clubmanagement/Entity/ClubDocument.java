@@ -1,5 +1,6 @@
 package com.example.clubmanagement.Entity;
 
+import com.example.clubmanagement.Enum.DocumentCategory;
 import com.example.clubmanagement.Enum.DocumentType;
 import com.example.clubmanagement.Enum.SyncStatus;
 import jakarta.persistence.*;
@@ -26,6 +27,10 @@ public class ClubDocument {
 
     @Column(nullable = false)
     private String title;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category")
+    private DocumentCategory category;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "document_type", nullable = false)

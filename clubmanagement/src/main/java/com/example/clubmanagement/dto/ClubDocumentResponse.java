@@ -13,6 +13,7 @@ public class ClubDocumentResponse {
     private Integer eventId;
     private String eventTitle;
     private String title;
+    private String category;
     private String documentType;
     private String googleDocumentId;
     private String documentUrl;
