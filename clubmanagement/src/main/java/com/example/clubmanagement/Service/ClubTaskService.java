@@ -2,6 +2,7 @@ package com.example.clubmanagement.Service;
 
 import com.example.clubmanagement.Entity.*;
 import com.example.clubmanagement.Enum.SyncStatus;
+import com.example.clubmanagement.Enum.ClubMemberRole;
 import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.dto.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,8 +50,12 @@ public class ClubTaskService {
 
     public ClubTaskResponse createTask(ClubTaskRequest req, Integer clubId, Integer userId) {
         // Validate creator is a member of the club
-        clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
+        ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
                 .orElseThrow(() -> new RuntimeException("Access denied: You are not a member of this club"));
+
+        if (member.getRole() == ClubMemberRole.MEMBER) {
+            throw new RuntimeException("Access denied: Members are not allowed to create tasks");
+        }
 
         Club club = clubRepository.findById(clubId)
                 .orElseThrow(() -> new RuntimeException("Club not found"));
@@ -149,8 +154,12 @@ public class ClubTaskService {
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
         Integer clubId = task.getClub().getId();
-        clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
+        ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
                 .orElseThrow(() -> new RuntimeException("Access denied: You are not a member of this club"));
+
+        if (member.getRole() == ClubMemberRole.MEMBER) {
+            throw new RuntimeException("Access denied: Members are not allowed to update tasks");
+        }
 
         task.setTitle(req.getTitle());
         task.setDescription(req.getDescription());
@@ -209,8 +218,12 @@ public class ClubTaskService {
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
         Integer clubId = task.getClub().getId();
-        clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
+        ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
                 .orElseThrow(() -> new RuntimeException("Access denied: You are not a member of this club"));
+
+        if (member.getRole() == ClubMemberRole.MEMBER) {
+            throw new RuntimeException("Access denied: Members are not allowed to delete tasks");
+        }
 
         if (task.getTrelloCardId() != null) {
             Optional<ClubTrelloConfig> configOpt = trelloConfigRepository.findByClubId(clubId);

@@ -34,24 +34,39 @@ public class ClubTaskController {
     @ResponseBody
     public String trelloCallback(@RequestParam Integer clubId) {
         // Trả trang HTML để đọc token từ fragment #token và post ngược về /api/trello/save-token
-        return "<html><body><script>" +
+        return "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px;'>" +
+                "<h2>Dang xu ly ket noi Trello...</h2>" +
+                "<script>" +
                 "var hash = window.location.hash;" +
                 "if(hash && hash.includes('token=')) {" +
                 "  var token = hash.split('token=')[1].split('&')[0];" +
                 "  fetch('/api/trello/save-token?clubId=" + clubId + "&token=' + token, {method:'POST'})" +
-                "  .then(() => document.body.innerHTML = '<h1>Ket noi Trello thanh cong! Ban co the dong tab nay.</h1>');" +
+                "  .then(res => res.json())" +
+                "  .then(data => {" +
+                "     document.body.innerHTML = '<h1 style=\"color:green;\">Ket noi Trello thanh cong!</h1>' +" +
+                "     '<p><b>Club ID:</b> " + clubId + "</p>' +" +
+                "     '<p><b>Token:</b> <code style=\"background:#eee;padding:5px;\">' + token + '</code></p>' +" +
+                "     '<p>Ban co the dong tab nay hoặc quay lai trang quan ly.</p>';" +
+                "  });" +
+                "} else {" +
+                "  document.body.innerHTML = '<h1 style=\"color:red;\">Khong tim thay Trello Token trên URL!</h1>';" +
                 "}" +
                 "</script></body></html>";
     }
 
     @PostMapping("/trello/save-token")
-    public ResponseEntity<Void> saveToken(@RequestParam Integer clubId, @RequestParam String token) {
+    public ResponseEntity<Map<String, Object>> saveToken(@RequestParam Integer clubId, @RequestParam String token) {
         Club club = clubRepository.findById(clubId).orElseThrow(() -> new RuntimeException("Club not found"));
         ClubTrelloConfig config = trelloConfigRepository.findByClubId(clubId)
                 .orElse(ClubTrelloConfig.builder().club(club).build());
         config.setTrelloToken(token);
         trelloConfigRepository.save(config);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of(
+                "clubId", clubId,
+                "token", token,
+                "status", "CONNECTED",
+                "message", "Lưu Trello Token thành công"
+        ));
     }
 
     @GetMapping("/trello/boards")
