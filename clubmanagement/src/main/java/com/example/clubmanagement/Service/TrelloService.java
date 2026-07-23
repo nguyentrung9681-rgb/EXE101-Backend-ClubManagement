@@ -34,11 +34,8 @@ public class TrelloService {
     }
 
     public List<Map<String, Object>> getBoards(String token) {
-        java.net.URI uri = UriComponentsBuilder.fromUriString(BASE_URL + "/members/me/boards")
-                .queryParam("key", apiKey)
-                .queryParam("token", token)
-                .build().encode().toUri();
-        ResponseEntity<List> response = restTemplate.getForEntity(uri, List.class);
+        String url = BASE_URL + "/members/me/boards?key=" + apiKey + "&token=" + token;
+        ResponseEntity<List> response = restTemplate.getForEntity(url, List.class);
         return response.getBody();
     }
 
@@ -48,12 +45,10 @@ public class TrelloService {
         String[] keys = {"todoListId", "doingListId", "doneListId"};
 
         for (int i = 0; i < defaultLists.length; i++) {
-            java.net.URI uri = UriComponentsBuilder.fromUriString(BASE_URL + "/boards/" + boardId + "/lists")
-                    .queryParam("name", defaultLists[i])
-                    .queryParam("key", apiKey)
-                    .queryParam("token", token)
-                    .build().encode().toUri();
-            Map<String, Object> res = restTemplate.postForObject(uri, null, Map.class);
+            String url = BASE_URL + "/boards/" + boardId + "/lists?key=" + apiKey + "&token=" + token;
+            Map<String, Object> body = new HashMap<>();
+            body.put("name", defaultLists[i]);
+            Map<String, Object> res = restTemplate.postForObject(url, body, Map.class);
             if (res != null && res.containsKey("id")) {
                 listIds.put(keys[i], res.get("id").toString());
             }
@@ -62,52 +57,43 @@ public class TrelloService {
     }
 
     public Map<String, Object> createCard(String token, String listId, ClubTask task) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(BASE_URL + "/cards")
-                .queryParam("idList", listId)
-                .queryParam("name", task.getTitle())
-                .queryParam("key", apiKey)
-                .queryParam("token", token);
+        String url = BASE_URL + "/cards?key=" + apiKey + "&token=" + token;
+        Map<String, Object> body = new HashMap<>();
+        body.put("idList", listId);
+        body.put("name", task.getTitle());
         if (task.getDescription() != null && !task.getDescription().isEmpty()) {
-            builder.queryParam("desc", task.getDescription());
+            body.put("desc", task.getDescription());
         }
-        java.net.URI uri = builder.build().encode().toUri();
-        return restTemplate.postForObject(uri, null, Map.class);
+        return restTemplate.postForObject(url, body, Map.class);
     }
 
     public void updateCard(String token, String cardId, ClubTask task, String listId) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(BASE_URL + "/cards/" + cardId)
-                .queryParam("name", task.getTitle())
-                .queryParam("key", apiKey)
-                .queryParam("token", token);
+        String url = BASE_URL + "/cards/" + cardId + "?key=" + apiKey + "&token=" + token;
+        Map<String, Object> body = new HashMap<>();
+        body.put("name", task.getTitle());
         if (task.getDescription() != null) {
-            builder.queryParam("desc", task.getDescription());
+            body.put("desc", task.getDescription());
         }
         if (listId != null) {
-            builder.queryParam("idList", listId);
+            body.put("idList", listId);
         }
-        java.net.URI uri = builder.build().encode().toUri();
-        restTemplate.put(uri, null);
+        restTemplate.put(url, body);
     }
 
     public void deleteCard(String token, String cardId) {
-        java.net.URI uri = UriComponentsBuilder.fromUriString(BASE_URL + "/cards/" + cardId)
-                .queryParam("key", apiKey)
-                .queryParam("token", token)
-                .build().encode().toUri();
-        restTemplate.delete(uri);
+        String url = BASE_URL + "/cards/" + cardId + "?key=" + apiKey + "&token=" + token;
+        restTemplate.delete(url);
     }
 
     public String registerWebhook(String token, String boardId, Integer clubId) {
         String callbackUrl = appBaseUrl + "/api/trello/webhook";
-        java.net.URI uri = UriComponentsBuilder.fromUriString(BASE_URL + "/webhooks")
-                .queryParam("callbackURL", callbackUrl)
-                .queryParam("idModel", boardId)
-                .queryParam("description", "SClub Webhook for Club " + clubId)
-                .queryParam("key", apiKey)
-                .queryParam("token", token)
-                .build().encode().toUri();
+        String url = BASE_URL + "/webhooks?key=" + apiKey + "&token=" + token;
+        Map<String, Object> body = new HashMap<>();
+        body.put("callbackURL", callbackUrl);
+        body.put("idModel", boardId);
+        body.put("description", "SClub Webhook for Club " + clubId);
         try {
-            Map<String, Object> res = restTemplate.postForObject(uri, null, Map.class);
+            Map<String, Object> res = restTemplate.postForObject(url, body, Map.class);
             return res != null ? res.get("id").toString() : null;
         } catch (Exception e) {
             return null; // Handle exception or logs safely
