@@ -56,4 +56,18 @@ public class GoogleOAuthController {
                     .body("<h1>Kết nối thất bại</h1><p>Đã xảy ra lỗi: " + e.getMessage() + "</p>");
         }
     }
+
+    /**
+     * Kiểm tra trạng thái liên kết tài khoản Google của người dùng.
+     * GET /api/google/status?userId=1
+     */
+    @GetMapping("/status")
+    public ResponseEntity<?> getStatus(@RequestParam Integer userId) {
+        try {
+            Map<String, Object> status = googleCalendarService.getGoogleAccountStatus(userId);
+            return ResponseEntity.ok(status);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+        }
+    }
 }

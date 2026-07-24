@@ -22,7 +22,7 @@ public class Club {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "logo_url")
+    @Column(name = "logo_url", columnDefinition = "TEXT")
     private String logoUrl;
 
     @Enumerated(EnumType.STRING)

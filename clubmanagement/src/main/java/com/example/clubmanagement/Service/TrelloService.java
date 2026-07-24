@@ -13,7 +13,7 @@ import java.util.Map;
 
 @Service
 public class TrelloService {
-    @Value("${TRELLO_API_KEY:}")
+    @Value("${trello.api-key:${TRELLO_API_KEY:}}")
     private String apiKey;
 
     @Value("${APP_BASE_URL:http://localhost:8080}")

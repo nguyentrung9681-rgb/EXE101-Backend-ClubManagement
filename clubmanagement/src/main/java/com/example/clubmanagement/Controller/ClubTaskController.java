@@ -9,6 +9,7 @@ import com.example.clubmanagement.Service.ClubTaskService;
 import com.example.clubmanagement.Service.TrelloService;
 import com.example.clubmanagement.dto.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,6 +25,9 @@ public class ClubTaskController {
     @Autowired private ClubTrelloConfigRepository trelloConfigRepository;
     @Autowired private ClubRepository clubRepository;
 
+    @Value("${trello.redirect-uri:${app.frontend.trello-url:https://exe-ebon.vercel.app/api/trello/callback}}")
+    private String frontendTrelloUrl;
+
     @GetMapping("/trello/connect")
     public ResponseEntity<Map<String, String>> connectTrello(@RequestParam Integer clubId) {
         String authUrl = trelloService.getAuthorizeUrl(clubId);
@@ -35,21 +39,18 @@ public class ClubTaskController {
     public String trelloCallback(@RequestParam Integer clubId) {
         // Trả trang HTML để đọc token từ fragment #token và post ngược về /api/trello/save-token
         return "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px;'>" +
-                "<h2>Dang xu ly ket noi Trello...</h2>" +
+                "<h2>Kết nối Trello thành công!</h2>" +
+                "<p>Hệ thống đang chuyển hướng về ứng dụng...</p>" +
                 "<script>" +
                 "var hash = window.location.hash;" +
                 "if(hash && hash.includes('token=')) {" +
                 "  var token = hash.split('token=')[1].split('&')[0];" +
                 "  fetch('/api/trello/save-token?clubId=" + clubId + "&token=' + token, {method:'POST'})" +
-                "  .then(res => res.json())" +
-                "  .then(data => {" +
-                "     document.body.innerHTML = '<h1 style=\"color:green;\">Ket noi Trello thanh cong!</h1>' +" +
-                "     '<p><b>Club ID:</b> " + clubId + "</p>' +" +
-                "     '<p><b>Token:</b> <code style=\"background:#eee;padding:5px;\">' + token + '</code></p>' +" +
-                "     '<p>Ban co the dong tab nay hoặc quay lai trang quan ly.</p>';" +
+                "  .then(function() {" +
+                "    setTimeout(function() { window.location.href = '" + frontendTrelloUrl + "?clubId=" + clubId + "'; }, 1500);" +
                 "  });" +
                 "} else {" +
-                "  document.body.innerHTML = '<h1 style=\"color:red;\">Khong tim thay Trello Token trên URL!</h1>';" +
+                "  document.body.innerHTML = '<h1 style=\"color:red;\">Không tìm thấy Trello Token trên URL!</h1>';" +
                 "}" +
                 "</script></body></html>";
     }

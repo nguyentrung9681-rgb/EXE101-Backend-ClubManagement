@@ -121,6 +121,9 @@ public class GoogleCalendarService {
         }
 
         if (account.getRefreshToken() == null) {
+            try {
+                googleAccountRepository.delete(account);
+            } catch (Exception ignored) {}
             throw new RuntimeException("Không có Refresh Token để làm mới Access Token!");
         }
 
@@ -134,19 +137,81 @@ public class GoogleCalendarService {
         body.add("grant_type", "refresh_token");
 
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
-        ResponseEntity<String> response = restTemplate.postForEntity("https://oauth2.googleapis.com/token", request, String.class);
+        
+        try {
+            ResponseEntity<String> response = restTemplate.postForEntity("https://oauth2.googleapis.com/token", request, String.class);
 
-        if (!response.getStatusCode().is2xxSuccessful()) {
-            throw new RuntimeException("Làm mới access token thất bại: " + response.getBody());
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new RuntimeException("Làm mới access token thất bại: " + response.getBody());
+            }
+
+            JsonNode jsonNode = objectMapper.readTree(response.getBody());
+            String newAccessToken = jsonNode.get("access_token").asText();
+            int expiresIn = jsonNode.get("expires_in").asInt();
+
+            account.setAccessToken(newAccessToken);
+            account.setTokenExpiry(LocalDateTime.now().plusSeconds(expiresIn));
+            return googleAccountRepository.save(account);
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            // Nếu Google trả về lỗi 4xx (ví dụ: 400 invalid_grant do token bị thu hồi), xóa liên kết cũ trong DB
+            try {
+                googleAccountRepository.delete(account);
+            } catch (Exception ignored) {}
+            throw new RuntimeException("Tài khoản Google đã bị thu hồi quyền truy cập. Vui lòng liên kết lại!");
+        }
+    }
+
+    /**
+     * Kiểm tra trạng thái liên kết tài khoản Google của người dùng.
+     */
+    public Map<String, Object> getGoogleAccountStatus(Integer userId) {
+        java.util.Optional<GoogleAccount> accountOpt = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(userId);
+        if (accountOpt.isEmpty()) {
+            return Map.of(
+                "isConnected", false,
+                "message", "Chưa liên kết tài khoản Google"
+            );
         }
 
-        JsonNode jsonNode = objectMapper.readTree(response.getBody());
-        String newAccessToken = jsonNode.get("access_token").asText();
-        int expiresIn = jsonNode.get("expires_in").asInt();
+        GoogleAccount account = accountOpt.get();
+        try {
+            // Thử làm mới Access Token nếu đã hết hạn (sẽ tự động xóa trong DB nếu refresh token hết hạn/thu hồi)
+            account = refreshAccessToken(account);
 
-        account.setAccessToken(newAccessToken);
-        account.setTokenExpiry(LocalDateTime.now().plusSeconds(expiresIn));
-        return googleAccountRepository.save(account);
+            // Xác thực thêm xem Access Token hiện tại còn hiệu lực thực tế hay không (đối chiếu Google UserInfo)
+            fetchGoogleEmail(account.getAccessToken());
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            // Nếu bị lỗi 4xx từ Google (unauthorized/forbidden) -> xóa liên kết cũ trong DB
+            try {
+                googleAccountRepository.delete(account);
+            } catch (Exception ignored) {}
+            return Map.of(
+                "isConnected", false,
+                "message", "Liên kết Google đã bị thu hồi hoặc hết hạn. Vui lòng kết nối lại."
+            );
+        } catch (Exception e) {
+            // Nếu do refreshAccessToken tự ném Exception vì thiếu Refresh Token hoặc bị thu hồi
+            if (e.getMessage() != null && (e.getMessage().contains("thu hồi") || e.getMessage().contains("Không có Refresh Token"))) {
+                return Map.of(
+                    "isConnected", false,
+                    "message", "Liên kết Google không hợp lệ: " + e.getMessage()
+                );
+            }
+            // Các lỗi kết nối mạng tạm thời (vẫn coi là đã kết nối nhưng có lỗi cảnh báo)
+            return Map.of(
+                "isConnected", true,
+                "googleEmail", account.getGoogleEmail() != null ? account.getGoogleEmail() : "",
+                "hasRefreshToken", account.getRefreshToken() != null,
+                "message", "Lỗi kết nối tạm thời đến Google: " + e.getMessage()
+            );
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("isConnected", true);
+        response.put("googleEmail", account.getGoogleEmail() != null ? account.getGoogleEmail() : "");
+        response.put("hasRefreshToken", account.getRefreshToken() != null);
+        response.put("updatedAt", account.getUpdatedAt() != null ? account.getUpdatedAt().toString() : (account.getCreatedAt() != null ? account.getCreatedAt().toString() : ""));
+        return response;
     }
 
     /**

@@ -26,6 +26,8 @@ public class ClubEventService {
     private final EventGoogleSyncRepository eventGoogleSyncRepository;
     private final GoogleCalendarService googleCalendarService;
     private final ClubMemberRepository clubMemberRepository;
+    private final ClubTaskRepository clubTaskRepository;
+    private final ClubDocumentRepository clubDocumentRepository;
 
     public ClubEventService(ClubEventRepository clubEventRepository,
                             ClubRepository clubRepository,
@@ -33,7 +35,9 @@ public class ClubEventService {
                             GoogleAccountRepository googleAccountRepository,
                             EventGoogleSyncRepository eventGoogleSyncRepository,
                             GoogleCalendarService googleCalendarService,
-                            ClubMemberRepository clubMemberRepository) {
+                            ClubMemberRepository clubMemberRepository,
+                            ClubTaskRepository clubTaskRepository,
+                            ClubDocumentRepository clubDocumentRepository) {
         this.clubEventRepository = clubEventRepository;
         this.clubRepository = clubRepository;
         this.userRepository = userRepository;
@@ -41,6 +45,8 @@ public class ClubEventService {
         this.eventGoogleSyncRepository = eventGoogleSyncRepository;
         this.googleCalendarService = googleCalendarService;
         this.clubMemberRepository = clubMemberRepository;
+        this.clubTaskRepository = clubTaskRepository;
+        this.clubDocumentRepository = clubDocumentRepository;
     }
 
     /**
@@ -205,6 +211,25 @@ public class ClubEventService {
             throw new RuntimeException("Sự kiện đã kết thúc, không thể xóa!");
         }
 
+        // Bỏ liên kết sự kiện ở các công việc (ClubTask)
+        List<ClubTask> tasks = clubTaskRepository.findByEventId(eventId);
+        if (tasks != null && !tasks.isEmpty()) {
+            for (ClubTask task : tasks) {
+                task.setEvent(null);
+            }
+            clubTaskRepository.saveAll(tasks);
+        }
+
+        // Bỏ liên kết sự kiện ở các tài liệu (ClubDocument)
+        List<ClubDocument> documents = clubDocumentRepository.findByEventId(eventId);
+        if (documents != null && !documents.isEmpty()) {
+            for (ClubDocument doc : documents) {
+                doc.setEvent(null);
+            }
+            clubDocumentRepository.saveAll(documents);
+        }
+
+        // Xóa đồng bộ trên Google Calendar nếu có
         Optional<EventGoogleSync> syncOpt = eventGoogleSyncRepository.findByClubEventId(eventId);
         if (syncOpt.isPresent()) {
             EventGoogleSync sync = syncOpt.get();
@@ -219,6 +244,9 @@ public class ClubEventService {
             }
             eventGoogleSyncRepository.delete(sync);
         }
+
+        // Xóa cứng sự kiện khỏi database
+        clubEventRepository.delete(event);
     }
 
     public List<ClubEvent> getEventsByClubId(Integer clubId) {
