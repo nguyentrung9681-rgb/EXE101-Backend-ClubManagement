@@ -1,11 +1,15 @@
 package com.example.clubmanagement.Controller;
 
 import com.example.clubmanagement.Service.GoogleCalendarService;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 @RestController
@@ -41,19 +45,12 @@ public class GoogleOAuthController {
      * GET /api/google/callback?code=...&state=userId
      */
     @GetMapping("/callback")
-    public ResponseEntity<String> callback(@RequestParam String code, @RequestParam("state") Integer userId) {
+    public void callback(@RequestParam String code, @RequestParam("state") Integer userId, HttpServletResponse response) throws IOException {
         try {
             googleCalendarService.exchangeCodeForTokens(userId, code);
-            return ResponseEntity.ok("<h1>Kết nối tài khoản Google thành công!</h1>" +
-                    "<p>Bạn đã liên kết lịch hoạt động với Google Calendar. Trình duyệt đang chuyển hướng...</p>" +
-                    "<script>" +
-                    "setTimeout(() => {" +
-                    "  window.location.href = \"" + frontendCalendarUrl + "\";" +
-                    "}, 1500);" +
-                    "</script>");
+            response.sendRedirect(frontendCalendarUrl + "?success=true");
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("<h1>Kết nối thất bại</h1><p>Đã xảy ra lỗi: " + e.getMessage() + "</p>");
+            response.sendRedirect(frontendCalendarUrl + "?error=" + URLEncoder.encode(e.getMessage(), StandardCharsets.UTF_8));
         }
     }
 
