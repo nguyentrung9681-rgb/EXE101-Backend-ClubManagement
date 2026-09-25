@@ -2,7 +2,7 @@ package com.example.clubmanagement.Config;
 
 import com.example.clubmanagement.dto.AuthResponse;
 import com.example.clubmanagement.Service.AuthService;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -11,14 +11,21 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.SecurityFilterChain;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     private final AuthService authService;
+    private final String frontendRedirectUrl;
 
-    public SecurityConfig(AuthService authService) {
+    public SecurityConfig(
+            AuthService authService,
+            @Value("${app.frontend.redirect-url:https://exe-ebon.vercel.app/oauth2/redirect}") String frontendRedirectUrl) {
         this.authService = authService;
+        this.frontendRedirectUrl = frontendRedirectUrl;
     }
 
     @Bean
@@ -72,8 +79,25 @@ public class SecurityConfig {
                             AuthResponse authResponse =
                                     authService.processGoogleUser(email, name, googleId, picture);
 
-                            response.setContentType("application/json;charset=UTF-8");
-                            new ObjectMapper().writeValue(response.getOutputStream(), authResponse);
+                            StringBuilder redirectUrlBuilder = new StringBuilder(frontendRedirectUrl);
+                            redirectUrlBuilder.append("?token=").append(URLEncoder.encode(authResponse.getToken(), StandardCharsets.UTF_8));
+                            if (authResponse.getUserId() != null) {
+                                redirectUrlBuilder.append("&userId=").append(authResponse.getUserId());
+                            }
+                            if (authResponse.getFullName() != null) {
+                                redirectUrlBuilder.append("&fullName=").append(URLEncoder.encode(authResponse.getFullName(), StandardCharsets.UTF_8));
+                            }
+                            if (authResponse.getEmail() != null) {
+                                redirectUrlBuilder.append("&email=").append(URLEncoder.encode(authResponse.getEmail(), StandardCharsets.UTF_8));
+                            }
+                            if (authResponse.getAuthProvider() != null) {
+                                redirectUrlBuilder.append("&authProvider=").append(URLEncoder.encode(authResponse.getAuthProvider(), StandardCharsets.UTF_8));
+                            }
+                            if (authResponse.getLastSelectedClubId() != null) {
+                                redirectUrlBuilder.append("&lastSelectedClubId=").append(authResponse.getLastSelectedClubId());
+                            }
+
+                            response.sendRedirect(redirectUrlBuilder.toString());
                         })
                 );
 
