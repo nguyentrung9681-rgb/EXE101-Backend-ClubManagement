@@ -23,7 +23,7 @@ public class SecurityConfig {
 
     public SecurityConfig(
             AuthService authService,
-            @Value("${app.frontend.redirect-url:https://exe-ebon.vercel.app/oauth2/redirect}") String frontendRedirectUrl) {
+            @Value("${app.frontend.redirect-url:https://exe-ebon.vercel.app}") String frontendRedirectUrl) {
         this.authService = authService;
         this.frontendRedirectUrl = frontendRedirectUrl;
     }
@@ -80,7 +80,12 @@ public class SecurityConfig {
                                     authService.processGoogleUser(email, name, googleId, picture);
 
                             StringBuilder redirectUrlBuilder = new StringBuilder(frontendRedirectUrl);
-                            redirectUrlBuilder.append("?token=").append(URLEncoder.encode(authResponse.getToken(), StandardCharsets.UTF_8));
+                            if (frontendRedirectUrl.contains("?")) {
+                                redirectUrlBuilder.append("&token=");
+                            } else {
+                                redirectUrlBuilder.append("?token=");
+                            }
+                            redirectUrlBuilder.append(URLEncoder.encode(authResponse.getToken(), StandardCharsets.UTF_8));
                             if (authResponse.getUserId() != null) {
                                 redirectUrlBuilder.append("&userId=").append(authResponse.getUserId());
                             }
