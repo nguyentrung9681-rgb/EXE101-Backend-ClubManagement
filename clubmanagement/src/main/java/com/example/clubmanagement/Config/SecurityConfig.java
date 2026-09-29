@@ -56,7 +56,8 @@ public class SecurityConfig {
                                 "/api/trello/**",
                                 "/api/tasks/**",
                                 "/api/trello/callback",
-                                "/api/trello/webhook/**"
+                                "/api/trello/webhook/**",
+                                "/api/chat/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

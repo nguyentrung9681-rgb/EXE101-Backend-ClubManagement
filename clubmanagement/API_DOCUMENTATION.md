@@ -269,3 +269,65 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
 }
 ```
 * **Mô tả hành động của FE:** FE nhận URL này và thực hiện chuyển hướng màn hình người dùng (`window.location.href = res.data.url`). Người dùng sẽ đồng ý cấp quyền trên giao diện của Google.
+
+---
+
+### 3.5. HỆ THỐNG CHAT NỘI BỘ (S-CLUB INTERNAL CHAT)
+
+#### 3.5.1. Lấy danh sách tin nhắn Chat Phòng Ban (dành cho nút "Open Department Chat")
+* **URL:** `/api/chat/clubs/{clubId}/departments/{departmentId}/messages?limit=50&beforeMessageId=123&requesterUserId={id}`
+* **Method:** `GET`
+* **Query Parameters:**
+  - `limit`: Số tin nhắn cần lấy (Mặc định: 50)
+  - `beforeMessageId`: ID tin nhắn cũ hơn để cuộn lên tải tiếp (Lazy loading). Để trống khi mở room lần đầu.
+* **Response (200 OK):**
+```json
+{
+  "messages": [
+    {
+      "id": 150,
+      "clubId": 1,
+      "departmentId": 5,
+      "departmentName": "Social",
+      "senderId": 2,
+      "senderName": "Mỹ Anh",
+      "senderAvatar": "http://...",
+      "content": "Chào ban Truyền thông!",
+      "messageType": "TEXT",
+      "isPinned": false,
+      "isDeleted": false,
+      "createdAt": "2026-09-29T12:00:00",
+      "attachments": []
+    }
+  ],
+  "nextBeforeMessageId": 101,
+  "hasMore": true,
+  "limit": 50
+}
+```
+
+#### 3.5.2. Gửi tin nhắn mới vào Phòng Ban
+* **URL:** `/api/chat/clubs/{clubId}/departments/{departmentId}/messages?requesterUserId={id}`
+* **Method:** `POST`
+* **Request Body:**
+```json
+{
+  "content": "Đây là tài liệu họp ban Social",
+  "messageType": "TEXT",
+  "attachments": []
+}
+```
+
+#### 3.5.3. Lấy danh sách tin nhắn Kênh Chung CLB
+* **URL:** `/api/chat/clubs/{clubId}/messages?limit=50&beforeMessageId=123&requesterUserId={id}`
+* **Method:** `GET`
+
+#### 3.5.4. Gửi tin nhắn mới vào Kênh Chung CLB
+* **URL:** `/api/chat/clubs/{clubId}/messages?requesterUserId={id}`
+* **Method:** `POST`
+
+#### 3.5.5. Tải tệp tin đính kèm
+* **URL:** `/api/chat/upload`
+* **Method:** `POST` (`multipart/form-data`)
+
+
