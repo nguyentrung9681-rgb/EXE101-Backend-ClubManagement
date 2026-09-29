@@ -16,7 +16,7 @@ public class TrelloService {
     @Value("${trello.api-key:${TRELLO_API_KEY:}}")
     private String apiKey;
 
-    @Value("${APP_BASE_URL:http://localhost:8080}")
+    @Value("${APP_BASE_URL:https://exe101-backend-clubmanagement.onrender.com}")
     private String appBaseUrl;
 
     private final RestTemplate restTemplate = new RestTemplate();
