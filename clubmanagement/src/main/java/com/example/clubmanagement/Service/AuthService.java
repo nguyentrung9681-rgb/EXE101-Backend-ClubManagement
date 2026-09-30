@@ -4,9 +4,14 @@ import com.example.clubmanagement.dto.*;
 import com.example.clubmanagement.Entity.*;
 import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.Config.JwtTokenProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.Random;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -15,13 +20,24 @@ public class AuthService {
     private final UserSettingRepository userSettingRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final EmailService emailService;
 
-    public AuthService(UserRepository userRepository, UserSettingRepository userSettingRepository,
-                       PasswordEncoder passwordEncoder, JwtTokenProvider tokenProvider) {
+    @Value("${app.frontend.redirect-url:https://exe-ebon.vercel.app}")
+    private String frontendUrl;
+
+    public AuthService(UserRepository userRepository,
+                       UserSettingRepository userSettingRepository,
+                       PasswordEncoder passwordEncoder,
+                       JwtTokenProvider tokenProvider,
+                       PasswordResetTokenRepository passwordResetTokenRepository,
+                       EmailService emailService) {
         this.userRepository = userRepository;
         this.userSettingRepository = userSettingRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
+        this.emailService = emailService;
     }
 
     @Transactional
@@ -96,7 +112,6 @@ public class AuthService {
 
     @Transactional
     public AuthResponse processGoogleUser(String email, String name, String googleId, String avatarUrl) {
-        // FIX: Khai báo biến user ở phạm vi hàm để tránh lỗi mất scope nhận diện
         User user = userRepository.findByGoogleId(googleId)
                 .or(() -> userRepository.findByEmail(email))
                 .orElse(null);
@@ -106,7 +121,6 @@ public class AuthService {
         }
 
         if (user == null) {
-            // Case 2: Đăng ký tự động bằng Google nếu chưa có tài khoản
             String baseUsername = email.split("@")[0];
             String username = baseUsername;
             int count = 1;
@@ -128,12 +142,10 @@ public class AuthService {
 
             user = userRepository.save(user);
 
-            // Khởi tạo cài đặt mặc định
             UserSetting setting = new UserSetting();
             setting.setUserId(user.getUserId());
             userSettingRepository.save(setting);
         } else {
-            // Cập nhật thông tin Google nếu người dùng đã tồn tại nhưng chưa lưu googleId/avatarUrl
             boolean updated = false;
             if (user.getGoogleId() == null && googleId != null) {
                 user.setGoogleId(googleId);
@@ -148,7 +160,6 @@ public class AuthService {
             }
         }
 
-        // Đọc cấu hình điều hướng CLB
         UserSetting setting = userSettingRepository.findById(user.getUserId()).orElse(null);
         Integer lastClubId = (setting != null) ? setting.getLastSelectedClubId() : null;
 
@@ -164,5 +175,101 @@ public class AuthService {
                 .lastSelectedClubId(lastClubId)
                 .message("Đăng nhập/Đăng ký bằng Google thành công!")
                 .build();
+    }
+
+    @Transactional
+    public String forgotPassword(ForgotPasswordRequest request) {
+        if (request.getEmail() == null || request.getEmail().isBlank()) {
+            throw new RuntimeException("Email hoặc tên tài khoản không được để trống!");
+        }
+
+        String identifier = request.getEmail().trim();
+        User user = userRepository.findByEmail(identifier)
+                .or(() -> userRepository.findByUsername(identifier))
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản liên kết với thông tin này!"));
+
+        if (!"LOCAL".equals(user.getAuthProvider())) {
+            throw new RuntimeException("Tài khoản này đăng ký qua Google. Vui lòng sử dụng Đăng nhập bằng Google!");
+        }
+
+        if ("BANNED".equals(user.getUserStatus()) || "INACTIVE".equals(user.getUserStatus())) {
+            throw new RuntimeException("Tài khoản này đã bị khóa hoặc không hoạt động!");
+        }
+
+        // Xóa token cũ nếu có và áp dụng ngay xuống CSDL
+        passwordResetTokenRepository.findByUser(user).ifPresent(oldToken -> {
+            passwordResetTokenRepository.delete(oldToken);
+            passwordResetTokenRepository.flush();
+        });
+
+        // Tạo mã OTP 6 số ngẫu nhiên & Token UUID
+        String otp = String.format("%06d", new Random().nextInt(900000) + 100000);
+        String token = UUID.randomUUID().toString();
+
+        PasswordResetToken resetToken = PasswordResetToken.builder()
+                .token(token)
+                .otp(otp)
+                .user(user)
+                .expiryDate(LocalDateTime.now().plusMinutes(15))
+                .build();
+
+        passwordResetTokenRepository.save(resetToken);
+
+        // Tạo liên kết reset password cho email
+        String resetUrl = frontendUrl + "/reset-password?token=" + token;
+
+        // Gửi email xác thực bất đồng bộ
+        emailService.sendPasswordResetEmail(user.getEmail(), user.getFullName(), resetUrl, otp);
+
+        return "Mã xác thực (OTP) đặt lại mật khẩu đã được gửi đến email " + user.getEmail() + ". Vui lòng kiểm tra hộp thư!";
+    }
+
+    @Transactional
+    public String resetPassword(ResetPasswordRequest request) {
+        if (request.getEmail() == null || request.getEmail().isBlank()) {
+            throw new RuntimeException("Email hoặc tên tài khoản không được để trống!");
+        }
+        if (request.getNewPassword() == null || request.getNewPassword().isBlank()) {
+            throw new RuntimeException("Mật khẩu mới không được để trống!");
+        }
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            throw new RuntimeException("Mật khẩu xác nhận không trùng khớp!");
+        }
+
+        if (request.getOtp() == null || request.getOtp().isBlank()) {
+            throw new RuntimeException("Vui lòng cung cấp Mã xác thực (OTP)!");
+        }
+        String otp = request.getOtp().trim();
+
+        String identifier = request.getEmail().trim();
+        User user = userRepository.findByEmail(identifier)
+                .or(() -> userRepository.findByUsername(identifier))
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản liên kết với Email/Tên đăng nhập này!"));
+
+        if (!"LOCAL".equals(user.getAuthProvider())) {
+            throw new RuntimeException("Tài khoản này đăng ký qua Google. Không thể đặt lại mật khẩu theo cách này!");
+        }
+
+        if ("BANNED".equals(user.getUserStatus()) || "INACTIVE".equals(user.getUserStatus())) {
+            throw new RuntimeException("Tài khoản này đã bị khóa hoặc không hoạt động!");
+        }
+
+        // Tìm token theo OTP/User
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByOtpAndUser(otp, user)
+                .orElseThrow(() -> new RuntimeException("Mã OTP xác thực không chính xác!"));
+
+        if (resetToken.isExpired()) {
+            passwordResetTokenRepository.delete(resetToken);
+            throw new RuntimeException("Mã xác thực đã hết hạn (chỉ có hiệu lực trong 15 phút). Vui lòng gửi lại yêu cầu!");
+        }
+
+        // Cập nhật mật khẩu mới
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        // Xóa token sau khi đổi mật khẩu thành công
+        passwordResetTokenRepository.delete(resetToken);
+
+        return "Đặt lại mật khẩu thành công! Vui lòng đăng nhập lại với mật khẩu mới.";
     }
 }
