@@ -330,4 +330,72 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
 * **URL:** `/api/chat/upload`
 * **Method:** `POST` (`multipart/form-data`)
 
+---
+
+### 3.6. QUẢN LÝ GOOGLE FORMS & GOOGLE SHEETS (TITLE UPDATE)
+
+#### 3.6.1. Cập nhật tên / tiêu đề Google Form
+* **URL:** `/api/google/forms/{formId}/title`
+* **Method:** `PUT`
+* **Phân quyền:** Chỉ `PRESIDENT` hoặc `TREASURER` của CLB sở hữu Form.
+* **Query Parameters:**
+  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `clubId` | `Integer` | Có | ID của CLB sở hữu Form |
+  | `title` | `String` | Có | Tên/Tiêu đề mới cho Form |
+  | `userId` | `Integer` | Không | ID người dùng (Tự động lấy từ JWT Token nếu để trống) |
+
+* **Responses:**
+  * **200 OK (Thành công):** Trả về thông tin `GoogleFormResponse` đã được cập nhật tên mới.
+  * **403 Forbidden:** Người dùng không phải PRESIDENT/TREASURER hoặc không thuộc CLB sở hữu Form.
+  * **400 Bad Request:** Tiêu đề mới bị rỗng/thiếu tham số.
+
+#### 3.6.2. Cập nhật tên / tiêu đề Google Sheet
+* **URL:** `/api/google/sheets/{spreadsheetId}/title`
+* **Method:** `PUT`
+* **Phân quyền:** Chỉ `PRESIDENT` hoặc `TREASURER` của CLB sở hữu Sheet.
+* **Query Parameters:**
+  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `clubId` | `Integer` | Có | ID của CLB sở hữu Sheet |
+  | `title` | `String` | Có | Tên/Tiêu đề mới cho Sheet |
+  | `userId` | `Integer` | Không | ID người dùng (Tự động lấy từ JWT Token nếu để trống) |
+
+* **Responses:**
+  * **200 OK (Thành công):** Trả về thông tin `GoogleSheetResponse` đã được cập nhật tên mới.
+  * **403 Forbidden:** Người dùng không phải PRESIDENT/TREASURER hoặc không thuộc CLB sở hữu Sheet.
+  * **400 Bad Request:** Tiêu đề mới bị rỗng/thiếu tham số.
+
+#### 3.6.3. Cập nhật loại (type) Google Form
+* **URL:** `/api/google/forms/{formId}/type`
+* **Method:** `PUT`
+* **Phân quyền:** Chỉ `PRESIDENT` hoặc `TREASURER` của CLB sở hữu Form.
+* **Query Parameters:**
+  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `clubId` | `Integer` | Có | ID của CLB sở hữu Form |
+  | `type` | `SheetFormType` | Có | Loại mới (`EVENT` hoặc `CLUB_ACTIVITIES`) |
+  | `userId` | `Integer` | Không | ID người dùng (Tự động lấy từ JWT Token nếu để trống) |
+
+* **Responses:**
+  * **200 OK (Thành công):** Trả về thông tin `GoogleFormResponse` đã cập nhật loại mới.
+  * **403 Forbidden:** Người dùng không có quyền ghi.
+
+#### 3.6.4. Cập nhật loại (type) Google Sheet
+* **URL:** `/api/google/sheets/{spreadsheetId}/type`
+* **Method:** `PUT`
+* **Phân quyền:** Chỉ `PRESIDENT` hoặc `TREASURER` của CLB sở hữu Sheet.
+* **Query Parameters:**
+  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `clubId` | `Integer` | Có | ID của CLB sở hữu Sheet |
+  | `type` | `SheetFormType` | Có | Loại mới (`EVENT` hoặc `CLUB_ACTIVITIES`) |
+  | `userId` | `Integer` | Không | ID người dùng (Tự động lấy từ JWT Token nếu để trống) |
+
+* **Responses:**
+  * **200 OK (Thành công):** Trả về thông tin `GoogleSheetResponse` đã cập nhật loại mới.
+  * **403 Forbidden:** Người dùng không có quyền ghi.
+
+
+
 

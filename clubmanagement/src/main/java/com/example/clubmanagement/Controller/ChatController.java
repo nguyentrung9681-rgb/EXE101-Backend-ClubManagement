@@ -1,16 +1,19 @@
 package com.example.clubmanagement.Controller;
 
+import com.example.clubmanagement.Config.SecurityUtils;
 import com.example.clubmanagement.Service.ChatService;
 import com.example.clubmanagement.dto.*;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -31,12 +34,15 @@ public class ChatController {
                                                     @PathVariable Integer departmentId,
                                                     @RequestParam(required = false, defaultValue = "50") Integer limit,
                                                     @RequestParam(required = false) Long beforeMessageId,
-                                                    @RequestParam Integer requesterUserId) {
+                                                    @RequestParam(required = false) Integer requesterUserId) {
         try {
-            MessageCursorPageResponse response = chatService.getDepartmentMessages(clubId, departmentId, requesterUserId, limit, beforeMessageId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            MessageCursorPageResponse response = chatService.getDepartmentMessages(clubId, departmentId, effectiveUserId, limit, beforeMessageId);
             return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -48,12 +54,15 @@ public class ChatController {
     public ResponseEntity<?> sendDepartmentMessage(@PathVariable Integer clubId,
                                                      @PathVariable Integer departmentId,
                                                      @RequestBody ChatMessageRequest request,
-                                                     @RequestParam Integer requesterUserId) {
+                                                     @RequestParam(required = false) Integer requesterUserId) {
         try {
-            ChatMessageResponse response = chatService.sendDepartmentMessage(clubId, departmentId, requesterUserId, request);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            ChatMessageResponse response = chatService.sendDepartmentMessage(clubId, departmentId, effectiveUserId, request);
             return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -65,12 +74,15 @@ public class ChatController {
     public ResponseEntity<?> getClubMessages(@PathVariable Integer clubId,
                                               @RequestParam(required = false, defaultValue = "50") Integer limit,
                                               @RequestParam(required = false) Long beforeMessageId,
-                                              @RequestParam Integer requesterUserId) {
+                                              @RequestParam(required = false) Integer requesterUserId) {
         try {
-            MessageCursorPageResponse response = chatService.getClubMessages(clubId, requesterUserId, limit, beforeMessageId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            MessageCursorPageResponse response = chatService.getClubMessages(clubId, effectiveUserId, limit, beforeMessageId);
             return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -81,12 +93,15 @@ public class ChatController {
     @PostMapping("/clubs/{clubId}/messages")
     public ResponseEntity<?> sendClubMessage(@PathVariable Integer clubId,
                                               @RequestBody ChatMessageRequest request,
-                                              @RequestParam Integer requesterUserId) {
+                                              @RequestParam(required = false) Integer requesterUserId) {
         try {
-            ChatMessageResponse response = chatService.sendClubMessage(clubId, requesterUserId, request);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            ChatMessageResponse response = chatService.sendClubMessage(clubId, effectiveUserId, request);
             return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -97,32 +112,53 @@ public class ChatController {
     @PostMapping("/upload")
     public ResponseEntity<?> uploadFile(@RequestParam("file") MultipartFile file) {
         try {
+            SecurityUtils.getCurrentUser().orElseThrow(() -> 
+                new SecurityException("Yêu cầu chưa xác thực! Vui lòng đăng nhập trước khi tải file."));
             ChatAttachmentDto response = chatService.uploadAttachment(file);
             return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     /**
-     * 6. Truy xuất tệp đính kèm đã upload
+     * 6. Truy xuất tệp đính kèm đã upload (Ngăn chặn Path Traversal & Stored XSS)
      * GET /api/chat/files/{fileName}
      */
     @GetMapping("/files/{fileName:.+}")
     public ResponseEntity<?> getFile(@PathVariable String fileName) {
         try {
-            Path filePath = Paths.get("uploads/chat/").resolve(fileName).normalize();
+            Path baseDirPath = Paths.get("uploads/chat/").toAbsolutePath().normalize();
+            Path filePath = baseDirPath.resolve(fileName).normalize();
+
+            // Lỗ hổng Path Traversal check: Đảm bảo file được tải nằm trong thư mục uploads/chat/
+            if (!filePath.startsWith(baseDirPath)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Truy cập đường dẫn tệp không hợp lệ!"));
+            }
+
             Resource resource = new UrlResource(filePath.toUri());
 
             if (!resource.exists() || !resource.isReadable()) {
                 return ResponseEntity.notFound().build();
             }
 
+            String contentType = null;
+            try {
+                contentType = java.nio.file.Files.probeContentType(filePath);
+            } catch (Exception ignored) {}
+
+            String disposition = "attachment";
+            if (contentType != null && (contentType.startsWith("image/") || contentType.equals("application/pdf"))) {
+                disposition = "inline";
+            }
+
             return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition + "; filename=\"" + resource.getFilename() + "\"")
                     .body(resource);
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Không thể xem file: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", "Không thể xem file: " + e.getMessage()));
         }
     }
 
@@ -132,12 +168,15 @@ public class ChatController {
      */
     @PutMapping("/messages/{messageId}/pin")
     public ResponseEntity<?> togglePinMessage(@PathVariable Long messageId,
-                                               @RequestParam Integer requesterUserId) {
+                                               @RequestParam(required = false) Integer requesterUserId) {
         try {
-            ChatMessageResponse response = chatService.togglePinMessage(messageId, requesterUserId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            ChatMessageResponse response = chatService.togglePinMessage(messageId, effectiveUserId);
             return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -147,12 +186,15 @@ public class ChatController {
      */
     @DeleteMapping("/messages/{messageId}")
     public ResponseEntity<?> deleteMessage(@PathVariable Long messageId,
-                                            @RequestParam Integer requesterUserId) {
+                                            @RequestParam(required = false) Integer requesterUserId) {
         try {
-            chatService.deleteMessage(messageId, requesterUserId);
-            return ResponseEntity.ok("Xóa tin nhắn thành công!");
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            chatService.deleteMessage(messageId, effectiveUserId);
+            return ResponseEntity.ok(Map.of("message", "Xóa tin nhắn thành công!"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 }

@@ -5,9 +5,11 @@ import com.example.clubmanagement.Entity.GoogleAccount;
 import com.example.clubmanagement.Entity.GoogleForm;
 import com.example.clubmanagement.Entity.SheetFormType;
 import com.example.clubmanagement.Entity.User;
+import com.example.clubmanagement.Entity.GoogleSheet;
 import com.example.clubmanagement.Repository.ClubRepository;
 import com.example.clubmanagement.Repository.GoogleAccountRepository;
 import com.example.clubmanagement.Repository.GoogleFormRepository;
+import com.example.clubmanagement.Repository.GoogleSheetRepository;
 import com.example.clubmanagement.Repository.UserRepository;
 import com.example.clubmanagement.dto.GoogleFormQuestionRequest;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -35,6 +37,7 @@ public class GoogleFormsService {
 
     private final GoogleAccountRepository googleAccountRepository;
     private final GoogleFormRepository googleFormRepository;
+    private final GoogleSheetRepository googleSheetRepository;
     private final GoogleCalendarService googleCalendarService;
     private final UserRepository userRepository;
     private final ClubRepository clubRepository;
@@ -45,12 +48,14 @@ public class GoogleFormsService {
 
     public GoogleFormsService(GoogleAccountRepository googleAccountRepository,
                               GoogleFormRepository googleFormRepository,
+                              GoogleSheetRepository googleSheetRepository,
                               GoogleCalendarService googleCalendarService,
                               UserRepository userRepository,
                               ClubRepository clubRepository,
                               ClubPermissionService clubPermissionService) {
         this.googleAccountRepository = googleAccountRepository;
         this.googleFormRepository = googleFormRepository;
+        this.googleSheetRepository = googleSheetRepository;
         this.googleCalendarService = googleCalendarService;
         this.userRepository = userRepository;
         this.clubRepository = clubRepository;
@@ -68,6 +73,7 @@ public class GoogleFormsService {
                 .queryParam("scope", "https://www.googleapis.com/auth/userinfo.email " +
                         "https://www.googleapis.com/auth/forms.body " +
                         "https://www.googleapis.com/auth/forms.responses.readonly " +
+                        "https://www.googleapis.com/auth/spreadsheets " +
                         "https://www.googleapis.com/auth/drive.file")
                 .queryParam("access_type", "offline")
                 .queryParam("prompt", "consent")
@@ -140,12 +146,54 @@ public class GoogleFormsService {
         String responderUri = root.get("responderUri").asText();
         String formUrl = "https://docs.google.com/forms/d/" + formId + "/edit";
 
+        // Tự động tạo file Google Sheet tương ứng cho Form để lưu phản hồi
+        String linkedSpreadsheetId = null;
+        String linkedSpreadsheetUrl = null;
+        try {
+            String sheetTitle = title + " (Phản hồi)";
+            Map<String, Object> sheetProperties = new HashMap<>();
+            sheetProperties.put("title", sheetTitle);
+
+            Map<String, Object> sheetBody = new HashMap<>();
+            sheetBody.put("properties", sheetProperties);
+
+            HttpEntity<Map<String, Object>> sheetRequest = new HttpEntity<>(sheetBody, headers);
+            ResponseEntity<String> sheetResponse = restTemplate.postForEntity(
+                    "https://sheets.googleapis.com/v4/spreadsheets",
+                    sheetRequest,
+                    String.class
+            );
+
+            if (sheetResponse.getStatusCode().is2xxSuccessful()) {
+                JsonNode sheetRoot = objectMapper.readTree(sheetResponse.getBody());
+                linkedSpreadsheetId = sheetRoot.get("spreadsheetId").asText();
+                linkedSpreadsheetUrl = sheetRoot.has("spreadsheetUrl")
+                        ? sheetRoot.get("spreadsheetUrl").asText()
+                        : "https://docs.google.com/spreadsheets/d/" + linkedSpreadsheetId + "/edit";
+
+                GoogleSheet googleSheet = GoogleSheet.builder()
+                        .spreadsheetId(linkedSpreadsheetId)
+                        .title(sheetTitle)
+                        .type(type)
+                        .spreadsheetUrl(linkedSpreadsheetUrl)
+                        .user(user)
+                        .club(club)
+                        .build();
+
+                googleSheetRepository.save(googleSheet);
+            }
+        } catch (Exception e) {
+            System.err.println("Tự động tạo Google Sheet liên kết thất bại: " + e.getMessage());
+        }
+
         GoogleForm googleForm = GoogleForm.builder()
                 .formId(formId)
                 .title(title)
                 .type(type)
                 .formUrl(formUrl)
                 .responderUri(responderUri)
+                .linkedSpreadsheetId(linkedSpreadsheetId)
+                .linkedSpreadsheetUrl(linkedSpreadsheetUrl)
                 .user(user)
                 .club(club)
                 .build();
@@ -222,7 +270,124 @@ public class GoogleFormsService {
             throw new RuntimeException("Lấy danh sách phản hồi Google Form thất bại: " + response.getBody());
         }
 
+        // Tự động đồng bộ các câu trả lời mới nhất sang Google Sheet liên kết
+        try {
+            syncFormResponsesToSheet(userId, clubId, formId);
+        } catch (Exception e) {
+            System.err.println("Tự động đồng bộ dữ liệu sang Google Sheet thất bại: " + e.getMessage());
+        }
+
         return objectMapper.readValue(response.getBody(), Map.class);
+    }
+
+    /**
+     * Tự động đồng bộ câu trả lời từ Google Form sang file Google Sheet liên kết.
+     */
+    @Transactional
+    public String syncFormResponsesToSheet(Integer userId, Integer clubId, String formId) throws Exception {
+        clubPermissionService.requireCanView(userId, clubId);
+
+        GoogleForm googleForm = googleFormRepository.findByFormIdAndClubId(formId, clubId)
+                .orElseThrow(() -> new SecurityException(
+                        "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
+
+        if (googleForm.getLinkedSpreadsheetId() == null) {
+            throw new IllegalStateException("Google Form này chưa được liên kết với Google Sheet.");
+        }
+
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(activeAccount.getAccessToken());
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        // 1. Lấy chi tiết Form để trích xuất thứ tự tiêu đề câu hỏi
+        String formDetailsUrl = "https://forms.googleapis.com/v1/forms/" + formId;
+        ResponseEntity<String> formResp = restTemplate.exchange(formDetailsUrl, HttpMethod.GET, entity, String.class);
+        if (!formResp.getStatusCode().is2xxSuccessful()) {
+            throw new RuntimeException("Không thể lấy cấu trúc Google Form để đồng bộ.");
+        }
+
+        JsonNode formRoot = objectMapper.readTree(formResp.getBody());
+        Map<String, String> questionMap = new LinkedHashMap<>();
+        JsonNode itemsNode = formRoot.get("items");
+        if (itemsNode != null && itemsNode.isArray()) {
+            for (JsonNode item : itemsNode) {
+                if (item.has("questionItem")) {
+                    String qTitle = item.has("title") ? item.get("title").asText() : "Câu hỏi";
+                    JsonNode qNode = item.get("questionItem").get("question");
+                    if (qNode != null && qNode.has("questionId")) {
+                        questionMap.put(qNode.get("questionId").asText(), qTitle);
+                    }
+                }
+            }
+        }
+
+        // 2. Lấy danh sách câu trả lời (responses)
+        String responsesUrl = "https://forms.googleapis.com/v1/forms/" + formId + "/responses";
+        ResponseEntity<String> responsesResp = restTemplate.exchange(responsesUrl, HttpMethod.GET, entity, String.class);
+        if (!responsesResp.getStatusCode().is2xxSuccessful()) {
+            throw new RuntimeException("Không thể lấy dữ liệu phản hồi từ Google Form.");
+        }
+
+        JsonNode responsesRoot = objectMapper.readTree(responsesResp.getBody());
+        JsonNode responsesArray = responsesRoot.get("responses");
+
+        List<List<Object>> sheetData = new ArrayList<>();
+        List<Object> headerRow = new ArrayList<>();
+        headerRow.add("Thời gian gửi (Timestamp)");
+        headerRow.addAll(questionMap.values());
+        sheetData.add(headerRow);
+
+        if (responsesArray != null && responsesArray.isArray()) {
+            for (JsonNode responseNode : responsesArray) {
+                List<Object> row = new ArrayList<>();
+                String timestamp = responseNode.has("createTime") ? responseNode.get("createTime").asText() : "";
+                row.add(timestamp);
+
+                JsonNode answersNode = responseNode.get("answers");
+                for (String questionId : questionMap.keySet()) {
+                    String answerValue = "";
+                    if (answersNode != null && answersNode.has(questionId)) {
+                        JsonNode textAnswersNode = answersNode.get(questionId).get("textAnswers");
+                        if (textAnswersNode != null && textAnswersNode.has("answers")) {
+                            List<String> values = new ArrayList<>();
+                            for (JsonNode ansVal : textAnswersNode.get("answers")) {
+                                if (ansVal.has("value")) {
+                                    values.add(ansVal.get("value").asText());
+                                }
+                            }
+                            answerValue = String.join(", ", values);
+                        }
+                    }
+                    row.add(answerValue);
+                }
+                sheetData.add(row);
+            }
+        }
+
+        // 3. Ghi dữ liệu vào Google Sheet đã liên kết
+        HttpHeaders sheetHeaders = new HttpHeaders();
+        sheetHeaders.setContentType(MediaType.APPLICATION_JSON);
+        sheetHeaders.setBearerAuth(activeAccount.getAccessToken());
+
+        Map<String, Object> sheetBody = new HashMap<>();
+        sheetBody.put("range", "Sheet1!A1");
+        sheetBody.put("majorDimension", "ROWS");
+        sheetBody.put("values", sheetData);
+
+        HttpEntity<Map<String, Object>> updateReq = new HttpEntity<>(sheetBody, sheetHeaders);
+        String updateUrl = String.format(
+                "https://sheets.googleapis.com/v4/spreadsheets/%s/values/Sheet1!A1?valueInputOption=USER_ENTERED",
+                googleForm.getLinkedSpreadsheetId());
+
+        ResponseEntity<String> updateResp = restTemplate.exchange(updateUrl, HttpMethod.PUT, updateReq, String.class);
+
+        if (!updateResp.getStatusCode().is2xxSuccessful()) {
+            throw new RuntimeException("Cập nhật dữ liệu vào Google Sheet thất bại: " + updateResp.getBody());
+        }
+
+        return updateResp.getBody();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -305,6 +470,91 @@ public class GoogleFormsService {
         }
 
         return response.getBody();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // UPDATE TITLE — Chỉ PRESIDENT / TREASURER
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Cập nhật tên/tiêu đề của Google Form.
+     * Yêu cầu: người dùng là PRESIDENT hoặc TREASURER của CLB sở hữu Form đó.
+     */
+    @Transactional
+    public GoogleForm updateFormTitle(Integer userId, Integer clubId, String formId, String newTitle) throws Exception {
+        if (newTitle == null || newTitle.trim().isEmpty()) {
+            throw new IllegalArgumentException("Tiêu đề không được để trống!");
+        }
+
+        // Kiểm tra quyền cập nhật
+        clubPermissionService.requireCanWrite(userId, clubId);
+
+        // Kiểm tra form thuộc CLB đang thao tác
+        GoogleForm googleForm = googleFormRepository.findByFormIdAndClubId(formId, clubId)
+                .orElseThrow(() -> new SecurityException(
+                        "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
+
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(activeAccount.getAccessToken());
+
+        Map<String, Object> updateFormInfo = new HashMap<>();
+        Map<String, Object> info = new HashMap<>();
+        info.put("title", newTitle.trim());
+        updateFormInfo.put("info", info);
+        updateFormInfo.put("updateMask", "title");
+
+        Map<String, Object> requestItem = new HashMap<>();
+        requestItem.put("updateFormInfo", updateFormInfo);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("requests", List.of(requestItem));
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+        String url = "https://forms.googleapis.com/v1/forms/" + formId + ":batchUpdate";
+
+        ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+
+        if (!response.getStatusCode().is2xxSuccessful()) {
+            throw new RuntimeException("Cập nhật tiêu đề Google Form thất bại: " + response.getBody());
+        }
+
+        googleForm.setTitle(newTitle.trim());
+        return googleFormRepository.save(googleForm);
+    }
+
+    /**
+     * Cập nhật loại (type: EVENT hoặc CLUB_ACTIVITIES) của Google Form.
+     * Yêu cầu: người dùng là PRESIDENT hoặc TREASURER của CLB sở hữu Form đó.
+     */
+    @Transactional
+    public GoogleForm updateFormType(Integer userId, Integer clubId, String formId, SheetFormType newType) throws Exception {
+        if (newType == null) {
+            throw new IllegalArgumentException("Loại (type) không được để trống! Vui lòng chọn EVENT hoặc CLUB_ACTIVITIES.");
+        }
+
+        // Kiểm tra quyền cập nhật
+        clubPermissionService.requireCanWrite(userId, clubId);
+
+        // Kiểm tra form thuộc CLB đang thao tác
+        GoogleForm googleForm = googleFormRepository.findByFormIdAndClubId(formId, clubId)
+                .orElseThrow(() -> new SecurityException(
+                        "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
+
+        googleForm.setType(newType);
+
+        // Đồng bộ loại cho Google Sheet liên kết nếu có
+        if (googleForm.getLinkedSpreadsheetId() != null) {
+            googleSheetRepository.findBySpreadsheetIdAndClubId(googleForm.getLinkedSpreadsheetId(), clubId)
+                    .ifPresent(sheet -> {
+                        sheet.setType(newType);
+                        googleSheetRepository.save(sheet);
+                    });
+        }
+
+        return googleFormRepository.save(googleForm);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

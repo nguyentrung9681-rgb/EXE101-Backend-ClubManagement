@@ -1,5 +1,6 @@
 package com.example.clubmanagement.Controller;
 
+import com.example.clubmanagement.Config.SecurityUtils;
 import com.example.clubmanagement.Entity.GoogleSheet;
 import com.example.clubmanagement.Entity.SheetFormType;
 import com.example.clubmanagement.Service.GoogleSheetsService;
@@ -16,15 +17,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Controller quản lý Google Sheet theo môi trường CLB.
- *
- * <p>Phân quyền:
- * <ul>
- *   <li>Mọi request đều yêu cầu userId đã liên kết Google Account.</li>
- *   <li>Mọi request đều yêu cầu userId là thành viên ACTIVE của clubId.</li>
- *   <li>Tạo / Ghi / Xóa: chỉ PRESIDENT hoặc TREASURER.</li>
- *   <li>Xem danh sách / Đọc dữ liệu: mọi thành viên ACTIVE.</li>
- * </ul>
+ * Controller quản lý Google Sheet theo môi trường CLB với phân quyền RBAC và kiểm tra JWT.
  */
 @Tag(name = "Google Sheets", description = "Quản lý Google Sheet theo CLB với phân quyền RBAC")
 @RestController
@@ -37,158 +30,145 @@ public class GoogleSheetsController {
         this.googleSheetsService = googleSheetsService;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // POST /api/google/sheets/create
-    // Yêu cầu: PRESIDENT hoặc TREASURER
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Tạo mới một Google Sheet cho CLB.
-     * Chỉ PRESIDENT hoặc TREASURER của CLB đó mới được thực hiện.
-     *
-     * POST /api/google/sheets/create?userId=1&clubId=10&title=TenSheet&type=EVENT
-     */
     @Operation(summary = "Tạo Google Sheet mới trong CLB",
                description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền tạo.")
     @PostMapping("/create")
     public ResponseEntity<?> createSheet(
-            @Parameter(description = "ID người dùng") @RequestParam Integer userId,
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
             @Parameter(description = "ID CLB") @RequestParam Integer clubId,
             @Parameter(description = "Tiêu đề sheet") @RequestParam String title,
             @Parameter(description = "Loại: EVENT hoặc CLUB_ACTIVITIES") @RequestParam SheetFormType type) {
         try {
-            GoogleSheet sheet = googleSheetsService.createSheet(userId, clubId, title, type);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            GoogleSheet sheet = googleSheetsService.createSheet(effectiveUserId, clubId, title, type);
             return ResponseEntity.ok(mapToResponse(sheet));
         } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // GET /api/google/sheets/list
-    // Yêu cầu: mọi thành viên ACTIVE của CLB
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Lấy danh sách Google Sheet thuộc CLB.
-     * Chỉ hiển thị sheet của CLB đó — không lộ sheet của CLB khác.
-     *
-     * GET /api/google/sheets/list?userId=1&clubId=10
-     */
     @Operation(summary = "Lấy danh sách Google Sheet của CLB",
                description = "Mọi thành viên ACTIVE được xem. Chỉ thấy sheet trong CLB mình.")
     @GetMapping("/list")
     public ResponseEntity<?> getSheets(
-            @Parameter(description = "ID người dùng") @RequestParam Integer userId,
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
             @Parameter(description = "ID CLB") @RequestParam Integer clubId) {
         try {
-            List<GoogleSheetResponse> sheets = googleSheetsService.getSheetsByClub(userId, clubId)
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            List<GoogleSheetResponse> sheets = googleSheetsService.getSheetsByClub(effectiveUserId, clubId)
                     .stream()
                     .map(this::mapToResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(sheets);
         } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // GET /api/google/sheets/values
-    // Yêu cầu: mọi thành viên ACTIVE của CLB
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Đọc dữ liệu từ Google Sheet tại vùng chỉ định.
-     * Sheet phải thuộc CLB mà người dùng đang hoạt động.
-     *
-     * GET /api/google/sheets/values?userId=1&clubId=10&spreadsheetId=...&range=Sheet1!A1:D10
-     */
     @Operation(summary = "Đọc dữ liệu từ Google Sheet",
                description = "Mọi thành viên ACTIVE được đọc. Sheet phải thuộc CLB của người dùng.")
     @GetMapping("/values")
     public ResponseEntity<?> getSheetValues(
-            @Parameter(description = "ID người dùng") @RequestParam Integer userId,
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
             @Parameter(description = "ID CLB") @RequestParam Integer clubId,
             @Parameter(description = "ID spreadsheet Google") @RequestParam String spreadsheetId,
             @Parameter(description = "Vùng đọc dữ liệu, vd: Sheet1!A1:D10") @RequestParam String range) {
         try {
-            List<List<Object>> values = googleSheetsService.getSheetValues(userId, clubId, spreadsheetId, range);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            List<List<Object>> values = googleSheetsService.getSheetValues(effectiveUserId, clubId, spreadsheetId, range);
             return ResponseEntity.ok(values);
         } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // PUT /api/google/sheets/values
-    // Yêu cầu: PRESIDENT hoặc TREASURER
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Cập nhật dữ liệu Google Sheet tại vùng chỉ định.
-     * Chỉ PRESIDENT hoặc TREASURER của CLB mới được ghi dữ liệu.
-     *
-     * PUT /api/google/sheets/values?userId=1&clubId=10&spreadsheetId=...&range=Sheet1!A1:D10
-     * Body: [["Họ Tên", "Chức Vụ"], ["Nguyễn Văn A", "Trưởng Ban"]]
-     */
     @Operation(summary = "Cập nhật dữ liệu vào Google Sheet",
                description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền ghi dữ liệu.")
     @PutMapping("/values")
     public ResponseEntity<?> updateSheetValues(
-            @Parameter(description = "ID người dùng") @RequestParam Integer userId,
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
             @Parameter(description = "ID CLB") @RequestParam Integer clubId,
             @Parameter(description = "ID spreadsheet Google") @RequestParam String spreadsheetId,
             @Parameter(description = "Vùng ghi dữ liệu, vd: Sheet1!A1:D10") @RequestParam String range,
             @RequestBody List<List<Object>> values) {
         try {
-            String response = googleSheetsService.updateSheetValues(userId, clubId, spreadsheetId, range, values);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            String response = googleSheetsService.updateSheetValues(effectiveUserId, clubId, spreadsheetId, range, values);
             return ResponseEntity.ok(Map.of("message", "Cập nhật dữ liệu thành công!", "response", response));
         } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // DELETE /api/google/sheets/{spreadsheetId}
-    // Yêu cầu: PRESIDENT hoặc TREASURER
-    // ─────────────────────────────────────────────────────────────────────────
+    @Operation(summary = "Cập nhật tiêu đề Google Sheet",
+               description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền cập nhật tiêu đề.")
+    @PutMapping("/{spreadsheetId}/title")
+    public ResponseEntity<?> updateSheetTitle(
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
+            @Parameter(description = "ID CLB") @RequestParam Integer clubId,
+            @PathVariable String spreadsheetId,
+            @Parameter(description = "Tiêu đề mới của sheet") @RequestParam String title) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            GoogleSheet sheet = googleSheetsService.updateSheetTitle(effectiveUserId, clubId, spreadsheetId, title);
+            return ResponseEntity.ok(mapToResponse(sheet));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
 
-    /**
-     * Xóa Google Sheet khỏi hệ thống và Google Drive.
-     * Chỉ PRESIDENT hoặc TREASURER của CLB mới được xóa.
-     *
-     * DELETE /api/google/sheets/{spreadsheetId}?userId=1&clubId=10
-     */
+    @Operation(summary = "Cập nhật loại của Google Sheet",
+               description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền cập nhật loại (EVENT hoặc CLUB_ACTIVITIES).")
+    @PutMapping("/{spreadsheetId}/type")
+    public ResponseEntity<?> updateSheetType(
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
+            @Parameter(description = "ID CLB") @RequestParam Integer clubId,
+            @PathVariable String spreadsheetId,
+            @Parameter(description = "Loại mới: EVENT hoặc CLUB_ACTIVITIES") @RequestParam SheetFormType type) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            GoogleSheet sheet = googleSheetsService.updateSheetType(effectiveUserId, clubId, spreadsheetId, type);
+            return ResponseEntity.ok(mapToResponse(sheet));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @Operation(summary = "Xóa Google Sheet",
                description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền xóa.")
     @DeleteMapping("/{spreadsheetId}")
     public ResponseEntity<?> deleteSheet(
-            @Parameter(description = "ID người dùng") @RequestParam Integer userId,
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
             @Parameter(description = "ID CLB") @RequestParam Integer clubId,
             @Parameter(description = "ID spreadsheet Google") @PathVariable String spreadsheetId) {
         try {
-            googleSheetsService.deleteSheet(userId, clubId, spreadsheetId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            googleSheetsService.deleteSheet(effectiveUserId, clubId, spreadsheetId);
             return ResponseEntity.ok(Map.of("message", "Xóa Google Sheet thành công!"));
         } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Helper mapper
-    // ─────────────────────────────────────────────────────────────────────────
 
     private GoogleSheetResponse mapToResponse(GoogleSheet sheet) {
         if (sheet == null) return null;

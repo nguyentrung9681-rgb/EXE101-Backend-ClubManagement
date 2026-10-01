@@ -1,5 +1,6 @@
 package com.example.clubmanagement.Controller;
 
+import com.example.clubmanagement.Config.SecurityUtils;
 import com.example.clubmanagement.Entity.ClubDocument;
 import com.example.clubmanagement.Entity.DocumentRevision;
 import com.example.clubmanagement.Enum.DocumentCategory;
@@ -18,6 +19,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -66,7 +68,7 @@ public class ClubDocumentController {
      */
     @PostMapping
     public ResponseEntity<?> createDocument(
-            @RequestParam Integer userId,
+            @RequestParam(required = false) Integer userId,
             @RequestParam Integer clubId,
             @RequestParam(required = false) Integer eventId,
             @RequestParam String title,
@@ -76,6 +78,7 @@ public class ClubDocumentController {
             @RequestParam DocumentType type
     ) {
         try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
             ClubDocumentRequest request = ClubDocumentRequest.builder()
                     .clubId(clubId)
                     .eventId(eventId)
@@ -83,10 +86,12 @@ public class ClubDocumentController {
                     .category(category != null ? category.name() : null)
                     .documentType(type.name())
                     .build();
-            ClubDocument doc = clubDocumentService.createDocument(request, userId);
+            ClubDocument doc = clubDocumentService.createDocument(request, effectiveUserId);
             return ResponseEntity.ok(mapToResponse(doc));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -97,7 +102,7 @@ public class ClubDocumentController {
     @GetMapping("/club/{clubId}")
     public ResponseEntity<?> getClubDocuments(
             @PathVariable Integer clubId,
-            @RequestParam Integer userId,
+            @RequestParam(required = false) Integer userId,
             @RequestParam(required = false) String search,
             @Parameter(description = "Danh mục lọc trên web (Tab: Event / Club Activity)", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY"}))
             @RequestParam(required = false) String category,
@@ -109,12 +114,15 @@ public class ClubDocumentController {
             @RequestParam(required = false) String sortDir
     ) {
         try {
-            List<ClubDocumentResponse> list = clubDocumentService.getDocumentsByClubFiltered(clubId, search, category, type, sortBy, sortDir, userId).stream()
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            List<ClubDocumentResponse> list = clubDocumentService.getDocumentsByClubFiltered(clubId, search, category, type, sortBy, sortDir, effectiveUserId).stream()
                     .map(this::mapToResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(list);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -123,12 +131,15 @@ public class ClubDocumentController {
      * GET /api/documents/{id}?userId=1
      */
     @GetMapping("/{id}")
-    public ResponseEntity<?> getDocumentById(@PathVariable Integer id, @RequestParam Integer userId) {
+    public ResponseEntity<?> getDocumentById(@PathVariable Integer id, @RequestParam(required = false) Integer userId) {
         try {
-            ClubDocument doc = clubDocumentService.getDocumentById(id, userId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            ClubDocument doc = clubDocumentService.getDocumentById(id, effectiveUserId);
             return ResponseEntity.ok(mapToResponse(doc));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -137,12 +148,15 @@ public class ClubDocumentController {
      * POST /api/documents/{id}/sync?userId=1
      */
     @PostMapping("/{id}/sync")
-    public ResponseEntity<?> syncDocument(@PathVariable Integer id, @RequestParam Integer userId) {
+    public ResponseEntity<?> syncDocument(@PathVariable Integer id, @RequestParam(required = false) Integer userId) {
         try {
-            ClubDocument doc = clubDocumentService.syncDocumentContent(id, userId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            ClubDocument doc = clubDocumentService.syncDocumentContent(id, effectiveUserId);
             return ResponseEntity.ok(mapToResponse(doc));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Đồng bộ thất bại: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Đồng bộ thất bại: " + e.getMessage()));
         }
     }
 
@@ -151,14 +165,17 @@ public class ClubDocumentController {
      * GET /api/documents/{id}/revisions?userId=1
      */
     @GetMapping("/{id}/revisions")
-    public ResponseEntity<?> getRevisions(@PathVariable Integer id, @RequestParam Integer userId) {
+    public ResponseEntity<?> getRevisions(@PathVariable Integer id, @RequestParam(required = false) Integer userId) {
         try {
-            List<DocumentRevisionResponse> responses = clubDocumentService.getDocumentRevisions(id, userId).stream()
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            List<DocumentRevisionResponse> responses = clubDocumentService.getDocumentRevisions(id, effectiveUserId).stream()
                     .map(this::mapToRevisionResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -173,12 +190,11 @@ public class ClubDocumentController {
             @RequestHeader(value = "X-Goog-Resource-State", required = false) String resourceState
     ) {
         if ("sync".equalsIgnoreCase(resourceState)) {
-            return ResponseEntity.ok().build(); // Xác thực kênh watch ban đầu của Google
+            return ResponseEntity.ok().build();
         }
 
         if (channelId != null && resourceId != null) {
-            // Chạy bất đồng bộ đồng bộ dữ liệu để tránh nghẽn webhook của Google
-            new Thread(() -> clubDocumentService.syncDocumentByChannel(channelId, resourceId)).start();
+            clubDocumentService.syncDocumentByChannel(channelId, resourceId);
         }
 
         return ResponseEntity.ok().build();
@@ -193,17 +209,20 @@ public class ClubDocumentController {
             @PathVariable Integer id,
             @Parameter(description = "Quyền truy cập", schema = @Schema(allowableValues = {"reader", "commenter", "writer"}))
             @RequestParam(required = false, defaultValue = "commenter") String role,
-            @RequestParam Integer userId
+            @RequestParam(required = false) Integer userId
     ) {
         try {
-            String shareUrl = clubDocumentService.shareDocument(id, role, userId);
-            return ResponseEntity.ok(java.util.Map.of(
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            String shareUrl = clubDocumentService.shareDocument(id, role, effectiveUserId);
+            return ResponseEntity.ok(Map.of(
                     "documentUrl", shareUrl,
                     "role", role,
                     "message", "Chia sẻ tài liệu thành công với vai trò: " + role
             ));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Lỗi chia sẻ: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", "Lỗi chia sẻ: " + e.getMessage()));
         }
     }
 
@@ -214,13 +233,16 @@ public class ClubDocumentController {
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteDocument(
             @PathVariable Integer id,
-            @RequestParam Integer userId
+            @RequestParam(required = false) Integer userId
     ) {
         try {
-            clubDocumentService.deleteDocument(id, userId);
-            return ResponseEntity.ok("Xóa tài liệu thành công");
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            clubDocumentService.deleteDocument(id, effectiveUserId);
+            return ResponseEntity.ok(Map.of("message", "Xóa tài liệu thành công"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Lỗi xóa tài liệu: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", "Lỗi xóa tài liệu: " + e.getMessage()));
         }
     }
 

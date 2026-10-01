@@ -1,8 +1,10 @@
 package com.example.clubmanagement.Controller;
 
+import com.example.clubmanagement.Config.SecurityUtils;
 import com.example.clubmanagement.Service.DepartmentService;
 import com.example.clubmanagement.dto.DepartmentRequest;
 import com.example.clubmanagement.dto.DepartmentResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,12 +29,15 @@ public class DepartmentController {
     @PostMapping
     public ResponseEntity<?> createDepartment(@PathVariable Integer clubId,
                                                @RequestBody DepartmentRequest request,
-                                               @RequestParam Integer requesterUserId) {
+                                               @RequestParam(required = false) Integer requesterUserId) {
         try {
-            DepartmentResponse response = departmentService.createDepartment(clubId, request, requesterUserId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            DepartmentResponse response = departmentService.createDepartment(clubId, request, effectiveUserId);
             return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -42,12 +47,15 @@ public class DepartmentController {
      */
     @GetMapping
     public ResponseEntity<?> getDepartments(@PathVariable Integer clubId,
-                                            @RequestParam Integer requesterUserId) {
+                                            @RequestParam(required = false) Integer requesterUserId) {
         try {
-            List<DepartmentResponse> list = departmentService.getDepartments(clubId, requesterUserId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            List<DepartmentResponse> list = departmentService.getDepartments(clubId, effectiveUserId);
             return ResponseEntity.ok(list);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -59,12 +67,15 @@ public class DepartmentController {
     public ResponseEntity<?> updateDepartment(@PathVariable Integer clubId,
                                                @PathVariable Integer departmentId,
                                                @RequestBody DepartmentRequest request,
-                                               @RequestParam Integer requesterUserId) {
+                                               @RequestParam(required = false) Integer requesterUserId) {
         try {
-            DepartmentResponse response = departmentService.updateDepartment(clubId, departmentId, request, requesterUserId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            DepartmentResponse response = departmentService.updateDepartment(clubId, departmentId, request, effectiveUserId);
             return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -75,14 +86,17 @@ public class DepartmentController {
     @GetMapping("/{departmentId}/chat-access")
     public ResponseEntity<?> checkChatAccess(@PathVariable Integer clubId,
                                              @PathVariable Integer departmentId,
-                                             @RequestParam Integer userId) {
+                                             @RequestParam(required = false) Integer userId) {
         try {
-            boolean hasAccess = departmentService.checkChatAccess(clubId, departmentId, userId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            boolean hasAccess = departmentService.checkChatAccess(clubId, departmentId, effectiveUserId);
             Map<String, Boolean> result = new HashMap<>();
             result.put("hasAccess", hasAccess);
             return ResponseEntity.ok(result);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 }

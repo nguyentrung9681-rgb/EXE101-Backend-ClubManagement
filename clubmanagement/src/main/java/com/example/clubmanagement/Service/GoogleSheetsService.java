@@ -252,6 +252,77 @@ public class GoogleSheetsService {
         return response.getBody();
     }
 
+    /**
+     * Cập nhật tên/tiêu đề của Google Sheet.
+     * Yêu cầu: người dùng là PRESIDENT hoặc TREASURER của CLB sở hữu Sheet đó.
+     */
+    @Transactional
+    public GoogleSheet updateSheetTitle(Integer userId, Integer clubId, String spreadsheetId, String newTitle) throws Exception {
+        if (newTitle == null || newTitle.trim().isEmpty()) {
+            throw new IllegalArgumentException("Tiêu đề không được để trống!");
+        }
+
+        // Kiểm tra quyền cập nhật
+        clubPermissionService.requireCanWrite(userId, clubId);
+
+        // Kiểm tra sheet thuộc CLB đang thao tác
+        GoogleSheet googleSheet = googleSheetRepository.findBySpreadsheetIdAndClubId(spreadsheetId, clubId)
+                .orElseThrow(() -> new SecurityException(
+                        "File Google Sheet này không thuộc CLB của bạn hoặc không tồn tại."));
+
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(activeAccount.getAccessToken());
+
+        Map<String, Object> updateSpreadsheetProperties = new HashMap<>();
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("title", newTitle.trim());
+        updateSpreadsheetProperties.put("properties", properties);
+        updateSpreadsheetProperties.put("fields", "title");
+
+        Map<String, Object> requestItem = new HashMap<>();
+        requestItem.put("updateSpreadsheetProperties", updateSpreadsheetProperties);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("requests", List.of(requestItem));
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+        String url = String.format("https://sheets.googleapis.com/v4/spreadsheets/%s:batchUpdate", spreadsheetId);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+
+        if (!response.getStatusCode().is2xxSuccessful()) {
+            throw new RuntimeException("Cập nhật tiêu đề Google Sheet thất bại: " + response.getBody());
+        }
+
+        googleSheet.setTitle(newTitle.trim());
+        return googleSheetRepository.save(googleSheet);
+    }
+
+    /**
+     * Cập nhật loại (type: EVENT hoặc CLUB_ACTIVITIES) của Google Sheet.
+     * Yêu cầu: người dùng là PRESIDENT hoặc TREASURER của CLB sở hữu Sheet đó.
+     */
+    @Transactional
+    public GoogleSheet updateSheetType(Integer userId, Integer clubId, String spreadsheetId, SheetFormType newType) throws Exception {
+        if (newType == null) {
+            throw new IllegalArgumentException("Loại (type) không được để trống! Vui lòng chọn EVENT hoặc CLUB_ACTIVITIES.");
+        }
+
+        // Kiểm tra quyền cập nhật
+        clubPermissionService.requireCanWrite(userId, clubId);
+
+        // Kiểm tra sheet thuộc CLB đang thao tác
+        GoogleSheet googleSheet = googleSheetRepository.findBySpreadsheetIdAndClubId(spreadsheetId, clubId)
+                .orElseThrow(() -> new SecurityException(
+                        "File Google Sheet này không thuộc CLB của bạn hoặc không tồn tại."));
+
+        googleSheet.setType(newType);
+        return googleSheetRepository.save(googleSheet);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // DELETE — Chỉ PRESIDENT / TREASURER
     // ─────────────────────────────────────────────────────────────────────────

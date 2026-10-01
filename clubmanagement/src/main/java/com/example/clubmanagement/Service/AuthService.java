@@ -9,8 +9,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.Random;
 import java.util.UUID;
 
 @Service
@@ -42,6 +42,10 @@ public class AuthService {
 
     @Transactional
     public String registerLocal(RegisterRequest request) {
+        if (request.getPassword() == null || request.getPassword().length() < 8) {
+            throw new RuntimeException("Mật khẩu phải chứa ít nhất 8 ký tự!");
+        }
+
         // Kiểm tra mật khẩu khớp nhau
         if (!request.getPassword().equals(request.getConfirmPassword())) {
             throw new RuntimeException("Mật khẩu xác nhận không trùng khớp!");
@@ -202,8 +206,8 @@ public class AuthService {
             passwordResetTokenRepository.flush();
         });
 
-        // Tạo mã OTP 6 số ngẫu nhiên & Token UUID
-        String otp = String.format("%06d", new Random().nextInt(900000) + 100000);
+        // Tạo mã OTP 6 số ngẫu nhiên an toàn (SecureRandom) & Token UUID
+        String otp = String.format("%06d", new SecureRandom().nextInt(900000) + 100000);
         String token = UUID.randomUUID().toString();
 
         PasswordResetToken resetToken = PasswordResetToken.builder()
@@ -229,8 +233,8 @@ public class AuthService {
         if (request.getEmail() == null || request.getEmail().isBlank()) {
             throw new RuntimeException("Email hoặc tên tài khoản không được để trống!");
         }
-        if (request.getNewPassword() == null || request.getNewPassword().isBlank()) {
-            throw new RuntimeException("Mật khẩu mới không được để trống!");
+        if (request.getNewPassword() == null || request.getNewPassword().length() < 8) {
+            throw new RuntimeException("Mật khẩu mới phải chứa ít nhất 8 ký tự!");
         }
         if (!request.getNewPassword().equals(request.getConfirmPassword())) {
             throw new RuntimeException("Mật khẩu xác nhận không trùng khớp!");

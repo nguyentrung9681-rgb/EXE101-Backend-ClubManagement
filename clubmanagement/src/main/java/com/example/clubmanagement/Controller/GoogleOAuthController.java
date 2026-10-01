@@ -1,5 +1,6 @@
 package com.example.clubmanagement.Controller;
 
+import com.example.clubmanagement.Config.SecurityUtils;
 import com.example.clubmanagement.Service.GoogleCalendarService;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,12 +32,15 @@ public class GoogleOAuthController {
      * GET /api/google/connect?userId=1
      */
     @GetMapping("/connect")
-    public ResponseEntity<?> connect(@RequestParam Integer userId) {
+    public ResponseEntity<?> connect(@RequestParam(required = false) Integer userId) {
         try {
-            String url = googleCalendarService.getAuthorizeUrl(userId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            String url = googleCalendarService.getAuthorizeUrl(effectiveUserId);
             return ResponseEntity.ok(Map.of("url", url));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -59,12 +63,15 @@ public class GoogleOAuthController {
      * GET /api/google/status?userId=1
      */
     @GetMapping("/status")
-    public ResponseEntity<?> getStatus(@RequestParam Integer userId) {
+    public ResponseEntity<?> getStatus(@RequestParam(required = false) Integer userId) {
         try {
-            Map<String, Object> status = googleCalendarService.getGoogleAccountStatus(userId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            Map<String, Object> status = googleCalendarService.getGoogleAccountStatus(effectiveUserId);
             return ResponseEntity.ok(status);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 }

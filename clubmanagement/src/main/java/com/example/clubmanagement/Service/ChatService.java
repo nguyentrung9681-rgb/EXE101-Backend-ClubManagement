@@ -1,6 +1,7 @@
 package com.example.clubmanagement.Service;
 
 import com.example.clubmanagement.Entity.*;
+import com.example.clubmanagement.Enum.ClubMemberRole;
 import com.example.clubmanagement.Enum.ClubMemberStatus;
 import com.example.clubmanagement.Enum.MessageType;
 import com.example.clubmanagement.Repository.*;
@@ -137,21 +138,50 @@ public class ChatService {
             throw new RuntimeException("Tệp tin tải lên rỗng!");
         }
 
+        // Giới hạn kích thước file tải lên (tối đa 10 MB)
+        long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new IllegalArgumentException("Kích thước tệp tin vượt quá giới hạn cho phép (Tối đa 10MB)!");
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename != null) {
+            originalFilename = Paths.get(originalFilename).getFileName().toString();
+        }
+
+        String extension = "";
+        if (originalFilename != null && originalFilename.contains(".")) {
+            extension = originalFilename.substring(originalFilename.lastIndexOf(".")).toLowerCase();
+        }
+
+        // Danh sách đuôi file cấm tuyệt đối (Executable / Script / Markup / XSS risk)
+        List<String> FORBIDDEN_EXTENSIONS = List.of(
+                ".exe", ".sh", ".bat", ".cmd", ".html", ".htm", ".xhtml", ".shtml", ".xml", ".svg",
+                ".js", ".jsp", ".jspx", ".php", ".phtml", ".php3", ".php4", ".php5", ".phps",
+                ".asp", ".aspx", ".ashx", ".asmx", ".cgi", ".pl", ".py", ".rb",
+                ".jar", ".war", ".ear", ".vbs", ".ps1", ".psm1", ".dll", ".so", ".dylib",
+                ".sys", ".drv", ".scr", ".com", ".pif", ".application", ".gadget", ".msi", ".msp", ".hta", ".cpl", ".msc"
+        );
+
+        if (FORBIDDEN_EXTENSIONS.contains(extension)) {
+            throw new IllegalArgumentException("Loại tệp tin này không được phép tải lên vì lý do bảo mật!");
+        }
+
         try {
             File folder = new File(UPLOAD_DIR);
             if (!folder.exists()) {
                 folder.mkdirs();
             }
 
-            String originalFilename = file.getOriginalFilename();
-            String extension = "";
-            if (originalFilename != null && originalFilename.contains(".")) {
-                extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+            String storedFileName = UUID.randomUUID() + extension;
+            Path filePath = Paths.get(UPLOAD_DIR).resolve(storedFileName).normalize();
+            
+            // Đảm bảo không thoát khỏi thư mục UPLOAD_DIR
+            if (!filePath.startsWith(Paths.get(UPLOAD_DIR).toAbsolutePath().normalize())) {
+                throw new SecurityException("Đường dẫn file lưu trữ không hợp lệ!");
             }
 
-            String storedFileName = UUID.randomUUID() + extension;
-            Path filePath = Paths.get(UPLOAD_DIR + storedFileName);
-            Files.copy(file.getInputStream(), filePath);
+            Files.copy(file.getInputStream(), filePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
             String fileUrl = "/api/chat/files/" + storedFileName;
 
@@ -174,7 +204,28 @@ public class ChatService {
     public ChatMessageResponse togglePinMessage(Long messageId, Integer userId) {
         ChatMessage message = chatMessageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy tin nhắn!"));
-        validateClubMembership(message.getClub().getId(), userId);
+
+        // Bảo mật IDOR: Kiểm tra đúng kênh phòng ban hoặc kênh chung CLB
+        if (message.getDepartment() != null) {
+            validateDepartmentMembership(message.getClub().getId(), message.getDepartment().getId(), userId);
+        } else {
+            validateClubMembership(message.getClub().getId(), userId);
+        }
+
+        // Kiểm tra quyền ghim: Người gửi, Chủ nhiệm hoặc Trưởng ban phòng ban tương ứng
+        ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(message.getClub().getId(), userId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của câu lạc bộ này!"));
+
+        boolean isSender = message.getSender().getUserId().equals(userId);
+        boolean isPresident = member.getRole() == ClubMemberRole.PRESIDENT;
+        boolean isDeptHead = member.getRole() == ClubMemberRole.DEPARTMENT_HEAD 
+                && message.getDepartment() != null 
+                && member.getDepartment() != null 
+                && member.getDepartment().getId().equals(message.getDepartment().getId());
+
+        if (!isSender && !isPresident && !isDeptHead) {
+            throw new SecurityException("Bạn không có quyền ghim hoặc bỏ ghim tin nhắn này!");
+        }
 
         message.setIsPinned(!Boolean.TRUE.equals(message.getIsPinned()));
         ChatMessage updated = chatMessageRepository.save(message);
@@ -182,15 +233,27 @@ public class ChatService {
     }
 
     /**
-     * Xóa mềm tin nhắn
+     * Xóa mềm tin nhắn (Cho phép chính người gửi hoặc Ban quản trị/Trưởng ban kiểm duyệt)
      */
     @Transactional
     public void deleteMessage(Long messageId, Integer userId) {
         ChatMessage message = chatMessageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy tin nhắn!"));
 
-        if (!message.getSender().getUserId().equals(userId)) {
-            throw new RuntimeException("Bạn chỉ có thể xóa tin nhắn của chính mình!");
+        validateClubMembership(message.getClub().getId(), userId);
+
+        ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(message.getClub().getId(), userId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của câu lạc bộ này!"));
+
+        boolean isSender = message.getSender().getUserId().equals(userId);
+        boolean isPresident = member.getRole() == ClubMemberRole.PRESIDENT;
+        boolean isDeptHead = member.getRole() == ClubMemberRole.DEPARTMENT_HEAD 
+                && message.getDepartment() != null 
+                && member.getDepartment() != null 
+                && member.getDepartment().getId().equals(message.getDepartment().getId());
+
+        if (!isSender && !isPresident && !isDeptHead) {
+            throw new SecurityException("Bạn không có quyền xóa tin nhắn này!");
         }
 
         message.setIsDeleted(true);

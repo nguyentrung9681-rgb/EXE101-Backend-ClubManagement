@@ -1,16 +1,19 @@
 package com.example.clubmanagement.Controller;
 
+import com.example.clubmanagement.Config.SecurityUtils;
 import com.example.clubmanagement.Entity.ClubEvent;
 import com.example.clubmanagement.Entity.EventGoogleSync;
 import com.example.clubmanagement.Service.ClubEventService;
 import com.example.clubmanagement.dto.ClubEventRequest;
 import com.example.clubmanagement.dto.ClubEventResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -31,8 +34,9 @@ public class ClubEventController {
     @PostMapping
     public ResponseEntity<?> createEvent(@RequestBody ClubEventRequest eventRequest,
                                          @RequestParam Integer clubId,
-                                         @RequestParam Integer userId) {
+                                         @RequestParam(required = false) Integer userId) {
         try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
             ClubEvent event = ClubEvent.builder()
                     .title(eventRequest.getTitle())
                     .description(eventRequest.getDescription())
@@ -40,10 +44,12 @@ public class ClubEventController {
                     .endTime(eventRequest.getEndTime())
                     .location(eventRequest.getLocation())
                     .build();
-            ClubEvent created = clubEventService.createEvent(event, clubId, userId);
+            ClubEvent created = clubEventService.createEvent(event, clubId, effectiveUserId);
             return ResponseEntity.ok(mapToClubEventResponse(created));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -54,8 +60,9 @@ public class ClubEventController {
     @PutMapping("/{id}")
     public ResponseEntity<?> updateEvent(@PathVariable Integer id,
                                          @RequestBody ClubEventRequest eventRequest,
-                                         @RequestParam Integer userId) {
+                                         @RequestParam(required = false) Integer userId) {
         try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
             ClubEvent eventDetails = ClubEvent.builder()
                     .title(eventRequest.getTitle())
                     .description(eventRequest.getDescription())
@@ -63,10 +70,12 @@ public class ClubEventController {
                     .endTime(eventRequest.getEndTime())
                     .location(eventRequest.getLocation())
                     .build();
-            ClubEvent updated = clubEventService.updateEvent(id, eventDetails, userId);
+            ClubEvent updated = clubEventService.updateEvent(id, eventDetails, effectiveUserId);
             return ResponseEntity.ok(mapToClubEventResponse(updated));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -76,12 +85,15 @@ public class ClubEventController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteEvent(@PathVariable Integer id,
-                                         @RequestParam Integer userId) {
+                                         @RequestParam(required = false) Integer userId) {
         try {
-            clubEventService.deleteEvent(id, userId);
-            return ResponseEntity.ok("Xóa sự kiện thành công!");
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            clubEventService.deleteEvent(id, effectiveUserId);
+            return ResponseEntity.ok(Map.of("message", "Xóa sự kiện thành công!"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -106,11 +118,11 @@ public class ClubEventController {
         try {
             ClubEvent event = clubEventService.getEventById(id);
             if ("ENDED".equals(event.getStatus())) {
-                return ResponseEntity.badRequest().body("Sự kiện đã kết thúc, không thể xem chi tiết!");
+                return ResponseEntity.badRequest().body(Map.of("error", "Sự kiện đã kết thúc, không thể xem chi tiết!"));
             }
             return ResponseEntity.ok(mapToClubEventResponse(event));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -148,12 +160,15 @@ public class ClubEventController {
      * POST /api/events/{id}/sync?userId=1
      */
     @PostMapping("/{id}/sync")
-    public ResponseEntity<?> syncEvent(@PathVariable Integer id, @RequestParam Integer userId) {
+    public ResponseEntity<?> syncEvent(@PathVariable Integer id, @RequestParam(required = false) Integer userId) {
         try {
-            ClubEvent event = clubEventService.syncEventToGoogle(id, userId);
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            ClubEvent event = clubEventService.syncEventToGoogle(id, effectiveUserId);
             return ResponseEntity.ok(mapToClubEventResponse(event));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 

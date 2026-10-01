@@ -14,6 +14,8 @@ public class GoogleFormResponse {
     private SheetFormType type;
     private String formUrl;
     private String responderUri;
+    private String linkedSpreadsheetId;
+    private String linkedSpreadsheetUrl;
     private Integer userId;
     private Integer clubId;       // CLB sở hữu file này
     private LocalDateTime createdAt;

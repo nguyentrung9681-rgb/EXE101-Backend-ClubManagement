@@ -33,6 +33,12 @@ public class GoogleForm {
     @Column(name = "responder_uri", length = 1024)
     private String responderUri;
 
+    @Column(name = "linked_spreadsheet_id", length = 255)
+    private String linkedSpreadsheetId;
+
+    @Column(name = "linked_spreadsheet_url", length = 1024)
+    private String linkedSpreadsheetUrl;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;

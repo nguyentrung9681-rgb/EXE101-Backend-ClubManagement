@@ -1,5 +1,6 @@
 package com.example.clubmanagement.Controller;
 
+import com.example.clubmanagement.Config.SecurityUtils;
 import com.example.clubmanagement.Entity.Club;
 import com.example.clubmanagement.Entity.ClubMember;
 import com.example.clubmanagement.Enum.ClubVisibility;
@@ -8,6 +9,7 @@ import com.example.clubmanagement.dto.ClubRequest;
 import com.example.clubmanagement.dto.ClubResponse;
 import com.example.clubmanagement.dto.ClubMemberResponse;
 import com.example.clubmanagement.dto.UpdateMemberRoleDeptRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,14 +33,15 @@ public class ClubController {
      * POST /api/clubs?userId=1
      */
     @PostMapping
-    public ResponseEntity<?> createClub(@RequestBody ClubRequest clubRequest, @RequestParam Integer userId) {
+    public ResponseEntity<?> createClub(@RequestBody ClubRequest clubRequest, @RequestParam(required = false) Integer userId) {
         try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
             ClubVisibility visibility = ClubVisibility.PUBLIC;
             if (clubRequest.getVisibility() != null) {
                 try {
                     visibility = ClubVisibility.valueOf(clubRequest.getVisibility().toUpperCase());
                 } catch (IllegalArgumentException e) {
-                    return ResponseEntity.badRequest().body("Giá trị visibility không hợp lệ (hợp lệ: PUBLIC, PRIVATE)");
+                    return ResponseEntity.badRequest().body(Map.of("error", "Giá trị visibility không hợp lệ (hợp lệ: PUBLIC, PRIVATE)"));
                 }
             }
             Club club = Club.builder()
@@ -47,10 +50,12 @@ public class ClubController {
                     .logoUrl(clubRequest.getLogoUrl())
                     .visibility(visibility)
                     .build();
-            Club created = clubService.createClub(club, userId);
+            Club created = clubService.createClub(club, effectiveUserId);
             return ResponseEntity.ok(mapToClubResponse(created));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -76,7 +81,7 @@ public class ClubController {
             Club club = clubService.getClubById(id);
             return ResponseEntity.ok(mapToClubResponse(club));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -87,15 +92,155 @@ public class ClubController {
     @GetMapping("/user/{userId}")
     public ResponseEntity<?> getUserClubs(@PathVariable Integer userId) {
         try {
-            List<ClubMemberResponse> responses = clubService.getUserMemberships(userId).stream()
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            List<ClubMemberResponse> responses = clubService.getUserMemberships(effectiveUserId).stream()
                     .map(this::mapToClubMemberResponse)
                     .collect(Collectors.toList());
             if (responses.isEmpty()) {
                 throw new RuntimeException("Người dùng chưa tham gia câu lạc bộ nào!");
             }
             return ResponseEntity.ok(responses);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Yêu cầu tham gia câu lạc bộ.
+     * POST /api/clubs/{clubId}/join?userId={userId}
+     */
+    @PostMapping("/{clubId}/join")
+    public ResponseEntity<?> joinClub(@PathVariable Integer clubId, @RequestParam(required = false) Integer userId) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            ClubMember member = clubService.joinClub(clubId, effectiveUserId);
+            String message = "Tham gia câu lạc bộ thành công!";
+            if (member.getStatus() == com.example.clubmanagement.Enum.ClubMemberStatus.PENDING) {
+                message = "Yêu cầu tham gia câu lạc bộ đã được gửi, vui lòng chờ chủ nhiệm phê duyệt!";
+            }
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", message);
+            response.put("member", mapToClubMemberResponse(member));
+            return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Lấy danh sách thành viên chờ duyệt (Chỉ dành cho chủ nhiệm).
+     * GET /api/clubs/{clubId}/members/pending?requesterUserId={requesterUserId}
+     */
+    @GetMapping("/{clubId}/members/pending")
+    public ResponseEntity<?> getPendingMembers(@PathVariable Integer clubId, @RequestParam(required = false) Integer requesterUserId) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            List<ClubMemberResponse> pending = clubService.getPendingMembers(clubId, effectiveUserId).stream()
+                    .map(this::mapToClubMemberResponse)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(pending);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Phê duyệt hoặc từ chối thành viên tham gia câu lạc bộ (Chỉ dành cho chủ nhiệm).
+     * PUT /api/clubs/{clubId}/members/{memberId}/approve?requesterUserId={requesterUserId}&approve={approve}
+     */
+    @PutMapping("/{clubId}/members/{memberId}/approve")
+    public ResponseEntity<?> approveMember(
+            @PathVariable Integer clubId,
+            @PathVariable Integer memberId,
+            @RequestParam(required = false) Integer requesterUserId,
+            @RequestParam boolean approve) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            ClubMember member = clubService.approveMember(clubId, memberId, effectiveUserId, approve);
+            if (approve) {
+                return ResponseEntity.ok(mapToClubMemberResponse(member));
+            } else {
+                Map<String, String> response = new HashMap<>();
+                response.put("message", "Đã từ chối yêu cầu tham gia của thành viên!");
+                return ResponseEntity.ok(response);
+            }
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Lấy danh sách thành viên đang hoạt động của Câu lạc bộ.
+     * GET /api/clubs/{clubId}/members
+     */
+    @GetMapping("/{clubId}/members")
+    public ResponseEntity<?> getClubMembers(@PathVariable Integer clubId) {
+        try {
+            List<ClubMemberResponse> members = clubService.getClubMembers(clubId).stream()
+                    .map(this::mapToClubMemberResponse)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(members);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Cập nhật vai trò và phòng ban của thành viên (Chỉ chủ nhiệm mới có quyền).
+     * PUT /api/clubs/{clubId}/members/{memberId}?requesterUserId={id}&role={role}&departmentId={departmentId}
+     */
+    @PutMapping("/{clubId}/members/{memberId}")
+    public ResponseEntity<?> updateMemberRoleDept(
+            @PathVariable Integer clubId,
+            @PathVariable Integer memberId,
+            @RequestParam(required = false) Integer requesterUserId,
+            @io.swagger.v3.oas.annotations.Parameter(schema = @io.swagger.v3.oas.annotations.media.Schema(allowableValues = {"DEPARTMENT_HEAD", "TREASURER", "MEMBER"}), description = "Vai trò mới gán cho thành viên")
+            @RequestParam(required = false) String role,
+            @RequestParam(required = false) Integer departmentId) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            UpdateMemberRoleDeptRequest request = UpdateMemberRoleDeptRequest.builder()
+                    .role(role)
+                    .departmentId(departmentId)
+                    .build();
+            ClubMember updated = clubService.updateMemberRoleDept(clubId, memberId, effectiveUserId, request);
+            return ResponseEntity.ok(mapToClubMemberResponse(updated));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Tạm khóa/mở khóa thành viên câu lạc bộ (Chủ nhiệm chuyển trạng thái User thành INACTIVE).
+     * PUT /api/clubs/{clubId}/members/{memberId}/lock?requesterUserId={id}&lock={true|false}
+     */
+    @PutMapping("/{clubId}/members/{memberId}/lock")
+    public ResponseEntity<?> lockMember(
+            @PathVariable Integer clubId,
+            @PathVariable Integer memberId,
+            @RequestParam(required = false) Integer requesterUserId,
+            @RequestParam boolean lock) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            clubService.lockMember(clubId, memberId, effectiveUserId, lock);
+            String message = lock ? "Đã khóa tài khoản thành viên thành công!" : "Đã mở khóa tài khoản thành viên thành công!";
+            Map<String, String> response = new HashMap<>();
+            response.put("message", message);
+            return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -115,83 +260,6 @@ public class ClubController {
                 .build();
     }
 
-    /**
-     * Yêu cầu tham gia câu lạc bộ.
-     * POST /api/clubs/{clubId}/join?userId={userId}
-     */
-    @PostMapping("/{clubId}/join")
-    public ResponseEntity<?> joinClub(@PathVariable Integer clubId, @RequestParam Integer userId) {
-        try {
-            ClubMember member = clubService.joinClub(clubId, userId);
-            String message = "Tham gia câu lạc bộ thành công!";
-            if (member.getStatus() == com.example.clubmanagement.Enum.ClubMemberStatus.PENDING) {
-                message = "Yêu cầu tham gia câu lạc bộ đã được gửi, vui lòng chờ chủ nhiệm phê duyệt!";
-            }
-            Map<String, Object> response = new HashMap<>();
-            response.put("message", message);
-            response.put("member", mapToClubMemberResponse(member));
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    /**
-     * Lấy danh sách thành viên chờ duyệt (Chỉ dành cho chủ nhiệm).
-     * GET /api/clubs/{clubId}/members/pending?requesterUserId={requesterUserId}
-     */
-    @GetMapping("/{clubId}/members/pending")
-    public ResponseEntity<?> getPendingMembers(@PathVariable Integer clubId, @RequestParam Integer requesterUserId) {
-        try {
-            List<ClubMemberResponse> pending = clubService.getPendingMembers(clubId, requesterUserId).stream()
-                    .map(this::mapToClubMemberResponse)
-                    .collect(Collectors.toList());
-            return ResponseEntity.ok(pending);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    /**
-     * Phê duyệt hoặc từ chối thành viên tham gia câu lạc bộ (Chỉ dành cho chủ nhiệm).
-     * PUT /api/clubs/{clubId}/members/{memberId}/approve?requesterUserId={requesterUserId}&approve={approve}
-     */
-    @PutMapping("/{clubId}/members/{memberId}/approve")
-    public ResponseEntity<?> approveMember(
-            @PathVariable Integer clubId,
-            @PathVariable Integer memberId,
-            @RequestParam Integer requesterUserId,
-            @RequestParam boolean approve) {
-        try {
-            ClubMember member = clubService.approveMember(clubId, memberId, requesterUserId, approve);
-            if (approve) {
-                return ResponseEntity.ok(mapToClubMemberResponse(member));
-            } else {
-                Map<String, String> response = new HashMap<>();
-                response.put("message", "Đã từ chối yêu cầu tham gia của thành viên!");
-                return ResponseEntity.ok(response);
-            }
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    /**
-     * Lấy danh sách thành viên đang hoạt động của Câu lạc bộ.
-     * GET /api/clubs/{clubId}/members
-     */
-    @GetMapping("/{clubId}/members")
-    public ResponseEntity<?> getClubMembers(@PathVariable Integer clubId) {
-        try {
-            List<ClubMemberResponse> members = clubService.getClubMembers(clubId).stream()
-                    .map(this::mapToClubMemberResponse)
-                    .collect(Collectors.toList());
-            return ResponseEntity.ok(members);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
     private ClubMemberResponse mapToClubMemberResponse(ClubMember member) {
         if (member == null) return null;
         return ClubMemberResponse.builder()
@@ -207,50 +275,5 @@ public class ClubController {
                 .departmentName(member.getDepartment() != null ? member.getDepartment().getName() : "None")
                 .joinedAt(member.getJoinedAt())
                 .build();
-    }
-
-    /**
-     * Cập nhật vai trò và phòng ban của thành viên (Chỉ chủ nhiệm mới có quyền).
-     * PUT /api/clubs/{clubId}/members/{memberId}?requesterUserId={id}&role={role}&departmentId={departmentId}
-     */
-    @PutMapping("/{clubId}/members/{memberId}")
-    public ResponseEntity<?> updateMemberRoleDept(
-            @PathVariable Integer clubId,
-            @PathVariable Integer memberId,
-            @RequestParam Integer requesterUserId,
-            @io.swagger.v3.oas.annotations.Parameter(schema = @io.swagger.v3.oas.annotations.media.Schema(allowableValues = {"DEPARTMENT_HEAD", "TREASURER", "MEMBER"}), description = "Vai trò mới gán cho thành viên")
-            @RequestParam(required = false) String role,
-            @RequestParam(required = false) Integer departmentId) {
-        try {
-            UpdateMemberRoleDeptRequest request = UpdateMemberRoleDeptRequest.builder()
-                    .role(role)
-                    .departmentId(departmentId)
-                    .build();
-            ClubMember updated = clubService.updateMemberRoleDept(clubId, memberId, requesterUserId, request);
-            return ResponseEntity.ok(mapToClubMemberResponse(updated));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    /**
-     * Tạm khóa/mở khóa thành viên câu lạc bộ (Chủ nhiệm chuyển trạng thái User thành INACTIVE).
-     * PUT /api/clubs/{clubId}/members/{memberId}/lock?requesterUserId={id}&lock={true|false}
-     */
-    @PutMapping("/{clubId}/members/{memberId}/lock")
-    public ResponseEntity<?> lockMember(
-            @PathVariable Integer clubId,
-            @PathVariable Integer memberId,
-            @RequestParam Integer requesterUserId,
-            @RequestParam boolean lock) {
-        try {
-            clubService.lockMember(clubId, memberId, requesterUserId, lock);
-            String message = lock ? "Đã khóa tài khoản thành viên thành công!" : "Đã mở khóa tài khoản thành viên thành công!";
-            Map<String, String> response = new HashMap<>();
-            response.put("message", message);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
     }
 }
