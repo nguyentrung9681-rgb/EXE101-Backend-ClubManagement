@@ -60,7 +60,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         }
 
         String clientIp = getClientIP(request);
-        boolean isAuthEndpoint = requestURI.startsWith("/api/auth/") || requestURI.startsWith("/login");
+        boolean isAuthEndpoint = requestURI.startsWith("/api/auth/") || requestURI.startsWith("/login") || requestURI.endsWith("/change-password");
 
         String bucketKey = clientIp + (isAuthEndpoint ? ":AUTH" : ":GENERAL");
         int capacity = isAuthEndpoint ? authCapacity : generalCapacity;

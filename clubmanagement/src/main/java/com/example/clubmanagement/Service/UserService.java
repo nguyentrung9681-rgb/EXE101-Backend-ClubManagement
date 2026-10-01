@@ -12,6 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class UserService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(UserService.class);
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
@@ -81,23 +83,41 @@ public class UserService {
 
     @Transactional
     public void changePassword(Integer userId, ChangePasswordRequest request) {
+        if (request == null) {
+            throw new RuntimeException("Dữ liệu yêu cầu không hợp lệ!");
+        }
+        if (request.getOldPassword() == null || request.getOldPassword().isEmpty()) {
+            throw new RuntimeException("Vui lòng nhập mật khẩu cũ!");
+        }
+        if (request.getNewPassword() == null || request.getNewPassword().length() < 8) {
+            throw new RuntimeException("Mật khẩu mới phải chứa ít nhất 8 ký tự!");
+        }
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            throw new RuntimeException("Mật khẩu xác nhận không khớp!");
+        }
+        if (request.getNewPassword().equals(request.getOldPassword())) {
+            throw new RuntimeException("Mật khẩu mới không được trùng với mật khẩu cũ!");
+        }
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
 
-        if ("GOOGLE".equals(user.getAuthProvider())) {
+        if ("BANNED".equals(user.getUserStatus()) || "INACTIVE".equals(user.getUserStatus())) {
+            throw new RuntimeException("Tài khoản này đã bị khóa hoặc không hoạt động!");
+        }
+
+        if (!"LOCAL".equals(user.getAuthProvider())) {
             throw new RuntimeException("Tài khoản đăng nhập qua Google không thể thay đổi mật khẩu!");
         }
 
         if (!passwordEncoder.matches(request.getOldPassword(), user.getPasswordHash())) {
+            log.warn("Security Alert: Đổi mật khẩu thất bại do mật khẩu cũ không đúng cho User ID: {}", userId);
             throw new RuntimeException("Mật khẩu cũ không chính xác!");
-        }
-
-        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
-            throw new RuntimeException("Mật khẩu xác nhận không khớp!");
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        log.info("Security Audit: Thay đổi mật khẩu thành công cho User ID: {}", userId);
     }
 
     private UserProfileResponse mapToUserProfileResponse(User user) {
