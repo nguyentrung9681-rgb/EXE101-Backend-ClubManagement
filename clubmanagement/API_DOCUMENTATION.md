@@ -332,7 +332,7 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
 
 ---
 
-### 3.6. QUẢN LÝ GOOGLE FORMS & GOOGLE SHEETS (TITLE UPDATE)
+### 3.6. QUẢN LÝ GOOGLE FORMS & GOOGLE SHEETS
 
 #### 3.6.1. Cập nhật tên / tiêu đề Google Form
 * **URL:** `/api/google/forms/{formId}/title`
@@ -345,57 +345,118 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
   | `title` | `String` | Có | Tên/Tiêu đề mới cho Form |
   | `userId` | `Integer` | Không | ID người dùng (Tự động lấy từ JWT Token nếu để trống) |
 
-* **Responses:**
-  * **200 OK (Thành công):** Trả về thông tin `GoogleFormResponse` đã được cập nhật tên mới.
-  * **403 Forbidden:** Người dùng không phải PRESIDENT/TREASURER hoặc không thuộc CLB sở hữu Form.
-  * **400 Bad Request:** Tiêu đề mới bị rỗng/thiếu tham số.
-
 #### 3.6.2. Cập nhật tên / tiêu đề Google Sheet
 * **URL:** `/api/google/sheets/{spreadsheetId}/title`
 * **Method:** `PUT`
 * **Phân quyền:** Chỉ `PRESIDENT` hoặc `TREASURER` của CLB sở hữu Sheet.
+
+---
+
+### 3.7. THANH TOÁN GÓI DỊCH VỤ (PAYMENT & VIETQR PAYOS)
+
+#### 3.7.1. Lấy danh sách gói dịch vụ khả dụng
+* **URL:** `/api/packages`
+* **Method:** `GET`
+* **Response (200 OK):**
+```json
+[
+  {
+    "id": 1,
+    "code": "STANDARD_MONTH",
+    "name": "Gói Tiêu Chuẩn (1 Tháng)",
+    "price": 100000.00,
+    "durationDays": 30,
+    "description": "Gói dùng thử trải nghiệm 30 ngày"
+  }
+]
+```
+
+#### 3.7.2. Kiểm tra quyền thanh toán của người dùng
+* **URL:** `/api/payments/check-permission`
+* **Method:** `GET`
 * **Query Parameters:**
   | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
   | :--- | :--- | :--- | :--- |
-  | `clubId` | `Integer` | Có | ID của CLB sở hữu Sheet |
-  | `title` | `String` | Có | Tên/Tiêu đề mới cho Sheet |
-  | `userId` | `Integer` | Không | ID người dùng (Tự động lấy từ JWT Token nếu để trống) |
+  | `clubId` | `Integer` | Có | ID của CLB |
+  | `userId` | `Integer` | Có | ID của người dùng |
+* **Response (200 OK):**
+```json
+{
+  "canPay": true,
+  "clubId": 1,
+  "userId": 5
+}
+```
 
-* **Responses:**
-  * **200 OK (Thành công):** Trả về thông tin `GoogleSheetResponse` đã được cập nhật tên mới.
-  * **403 Forbidden:** Người dùng không phải PRESIDENT/TREASURER hoặc không thuộc CLB sở hữu Sheet.
-  * **400 Bad Request:** Tiêu đề mới bị rỗng/thiếu tham số.
+#### 3.7.3. Tạo đơn hàng thanh toán VietQR (Create Checkout Order)
+* **URL:** `/api/payments/create-checkout`
+* **Method:** `POST`
+* **Request Body:**
+```json
+{
+  "packageId": 1,
+  "clubId": 1,
+  "userId": 5
+}
+```
+* **Response (200 OK):**
+```json
+{
+  "id": 10,
+  "orderCode": 1727850000123,
+  "userId": 5,
+  "clubId": 1,
+  "packageId": 1,
+  "packageName": "Gói Tiêu Chuẩn (1 Tháng)",
+  "amount": 100000.00,
+  "status": "PENDING",
+  "checkoutUrl": "https://pay.payos.vn/web/...",
+  "qrCodeUrl": "https://img.vietqr.io/image/...",
+  "paymentMethod": "VIETQR",
+  "createdAt": "2026-10-02T15:30:00"
+}
+```
 
-#### 3.6.3. Cập nhật loại (type) Google Form
-* **URL:** `/api/google/forms/{formId}/type`
-* **Method:** `PUT`
-* **Phân quyền:** Chỉ `PRESIDENT` hoặc `TREASURER` của CLB sở hữu Form.
-* **Query Parameters:**
-  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
-  | :--- | :--- | :--- | :--- |
-  | `clubId` | `Integer` | Có | ID của CLB sở hữu Form |
-  | `type` | `SheetFormType` | Có | Loại mới (`EVENT` hoặc `CLUB_ACTIVITIES`) |
-  | `userId` | `Integer` | Không | ID người dùng (Tự động lấy từ JWT Token nếu để trống) |
+#### 3.7.4. Kiểm tra trạng thái đơn hàng (Polling Order Status)
+* **URL:** `/api/payments/order/{orderCode}`
+* **Method:** `GET`
+* **Response (200 OK):**
+```json
+{
+  "id": 10,
+  "orderCode": 1727850000123,
+  "userId": 5,
+  "clubId": 1,
+  "packageId": 1,
+  "packageName": "Gói Tiêu Chuẩn (1 Tháng)",
+  "amount": 100000.00,
+  "status": "PAID",
+  "checkoutUrl": "https://pay.payos.vn/web/...",
+  "qrCodeUrl": "https://img.vietqr.io/image/...",
+  "paymentMethod": "VIETQR",
+  "transactionNo": "FT240929123456",
+  "createdAt": "2026-10-02T15:30:00",
+  "paidAt": "2026-10-02T15:31:20"
+}
+```
 
-* **Responses:**
-  * **200 OK (Thành công):** Trả về thông tin `GoogleFormResponse` đã cập nhật loại mới.
-  * **403 Forbidden:** Người dùng không có quyền ghi.
+#### 3.7.5. Hủy đơn hàng thanh toán
+* **URL:** `/api/payments/order/{orderCode}/cancel`
+* **Method:** `POST`
 
-#### 3.6.4. Cập nhật loại (type) Google Sheet
-* **URL:** `/api/google/sheets/{spreadsheetId}/type`
-* **Method:** `PUT`
-* **Phân quyền:** Chỉ `PRESIDENT` hoặc `TREASURER` của CLB sở hữu Sheet.
-* **Query Parameters:**
-  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
-  | :--- | :--- | :--- | :--- |
-  | `clubId` | `Integer` | Có | ID của CLB sở hữu Sheet |
-  | `type` | `SheetFormType` | Có | Loại mới (`EVENT` hoặc `CLUB_ACTIVITIES`) |
-  | `userId` | `Integer` | Không | ID người dùng (Tự động lấy từ JWT Token nếu để trống) |
-
-* **Responses:**
-  * **200 OK (Thành công):** Trả về thông tin `GoogleSheetResponse` đã cập nhật loại mới.
-  * **403 Forbidden:** Người dùng không có quyền ghi.
-
-
-
-
+#### 3.7.6. Lấy gói dịch vụ đang hoạt động của CLB
+* **URL:** `/api/payments/club/{clubId}/subscription`
+* **Method:** `GET`
+* **Response (200 OK):**
+```json
+{
+  "id": 1,
+  "clubId": 1,
+  "clubName": "CLB Bóng Đá",
+  "packageId": 1,
+  "packageName": "Gói Tiêu Chuẩn (1 Tháng)",
+  "startDate": "2026-10-02T15:31:20",
+  "endDate": "2026-11-01T15:31:20",
+  "status": "ACTIVE"
+}
+```

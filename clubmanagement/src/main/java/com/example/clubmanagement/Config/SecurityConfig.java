@@ -98,7 +98,9 @@ public class SecurityConfig {
                                 "/api/google/callback",
                                 "/api/trello/webhook/**",
                                 "/api/trello/callback",
-                                "/api/documents/webhook"
+                                "/api/documents/webhook",
+                                "/api/packages/**",
+                                "/api/payments/**"
                         ).permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
