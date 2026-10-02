@@ -269,3 +269,116 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
 }
 ```
 * **Mô tả hành động của FE:** FE nhận URL này và thực hiện chuyển hướng màn hình người dùng (`window.location.href = res.data.url`). Người dùng sẽ đồng ý cấp quyền trên giao diện của Google.
+
+---
+
+### 3.5. THANH TOÁN GÓI DỊCH VỤ (PAYMENT & VIETQR PAYOS)
+
+#### 3.5.1. Lấy danh sách gói dịch vụ khả dụng
+* **URL:** `/api/packages`
+* **Method:** `GET`
+* **Response (200 OK):**
+```json
+[
+  {
+    "id": 1,
+    "code": "FLASH_SALE",
+    "name": "Gói Flash Sale",
+    "price": 20000,
+    "durationDays": 14,
+    "description": "Gói dùng thử trải nghiệm 14 ngày"
+  },
+  {
+    "id": 2,
+    "code": "MONTHLY",
+    "name": "Gói Theo Tháng",
+    "price": 99000,
+    "durationDays": 30,
+    "description": "Dành cho CLB dưới 30 thành viên (99.000đ/tháng)"
+  },
+  {
+    "id": 3,
+    "code": "YEARLY",
+    "name": "Gói Theo Năm",
+    "price": 708000,
+    "durationDays": 365,
+    "description": "Dành cho CLB trên 30 thành viên (Tiết kiệm chỉ 59.000đ/tháng)"
+  }
+]
+```
+
+#### 3.5.2. Tạo đơn hàng thanh toán VietQR (Create Checkout Order)
+* **URL:** `/api/payments/create-checkout`
+* **Method:** `POST`
+* **Request Body:**
+```json
+{
+  "packageId": 2,
+  "clubId": 1,
+  "userId": 1
+}
+```
+* **Response (200 OK):**
+```json
+{
+  "id": 10,
+  "orderCode": 847291034,
+  "userId": 1,
+  "clubId": 1,
+  "packageId": 2,
+  "packageName": "Gói Chuyên Nghiệp",
+  "amount": 299000,
+  "status": "PENDING",
+  "checkoutUrl": "https://pay.payos.vn/web/...",
+  "qrCodeUrl": "https://img.vietqr.io/image/...",
+  "paymentMethod": "VIETQR",
+  "createdAt": "2026-09-29T15:00:00"
+}
+```
+* **Mô tả hành động của FE:** FE hiển thị mã VietQR từ `qrCodeUrl` cho người dùng quét trên App ngân hàng, hoặc chuyển tới `checkoutUrl`. FE bật Polling gọi `GET /api/payments/order/{orderCode}` mỗi 3 giây để nhận biết khi đơn hàng đổi trạng thái sang `PAID`.
+
+#### 3.5.3. Kiểm tra trạng thái đơn hàng (Polling Order Status)
+* **URL:** `/api/payments/order/{orderCode}`
+* **Method:** `GET`
+* **Response (200 OK):**
+```json
+{
+  "id": 10,
+  "orderCode": 847291034,
+  "userId": 1,
+  "clubId": 1,
+  "packageId": 2,
+  "packageName": "Gói Chuyên Nghiệp",
+  "amount": 299000,
+  "status": "PAID",
+  "checkoutUrl": "https://pay.payos.vn/web/...",
+  "qrCodeUrl": "https://img.vietqr.io/image/...",
+  "paymentMethod": "VIETQR",
+  "transactionNo": "FT240929123456",
+  "createdAt": "2026-09-29T15:00:00",
+  "paidAt": "2026-09-29T15:01:20"
+}
+```
+
+#### 3.5.4. PayOS Webhook Endpoint (Hệ thống tự động)
+* **URL:** `/api/payments/payos-webhook`
+* **Method:** `POST`
+* **Mô tả:** Endpoint do PayOS tự động gọi đến khi giao dịch thanh toán hoàn tất. Hệ thống kiểm tra signature, đổi trạng thái đơn hàng sang `PAID` và kích hoạt gói cho CLB.
+
+#### 3.5.5. Lấy gói dịch vụ đang hoạt động của CLB
+* **URL:** `/api/payments/club/{clubId}/subscription`
+* **Method:** `GET`
+* **Response (200 OK):**
+```json
+{
+  "id": 1,
+  "clubId": 1,
+  "clubName": "CLB Bóng Đá",
+  "packageId": 2,
+  "packageName": "Gói Chuyên Nghiệp",
+  "startDate": "2026-09-29T15:01:20",
+  "endDate": "2026-12-28T15:01:20",
+  "status": "ACTIVE"
+}
+```
+
