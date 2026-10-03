@@ -16,6 +16,7 @@ import vn.payos.PayOS;
 import vn.payos.type.ItemData;
 import vn.payos.type.PaymentData;
 import vn.payos.type.CheckoutResponseData;
+import vn.payos.type.PaymentLinkData;
 import vn.payos.type.PayOSResponse;
 import vn.payos.type.Webhook;
 import vn.payos.type.WebhookData;
@@ -244,9 +245,13 @@ public class PaymentService {
         return mapOrderToResponse(order);
     }
 
+    @Transactional
     public PaymentOrderResponse getOrderByCode(Long orderCode) {
         PaymentOrder order = orderRepository.findByOrderCode(orderCode)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng mã: " + orderCode));
+        if (order.getStatus() == OrderStatus.PENDING) {
+            syncOrderWithPayOS(order);
+        }
         return mapOrderToResponse(order);
     }
 
@@ -257,11 +262,59 @@ public class PaymentService {
                 .orElse(false);
     }
 
+    @Transactional
     public ClubSubscriptionResponse getActiveSubscriptionForClub(Integer clubId) {
         ClubSubscription sub = subscriptionRepository.findFirstByClubIdAndStatusOrderByEndDateDesc(clubId, SubscriptionStatus.ACTIVE)
                 .orElse(null);
+        if (sub == null) {
+            List<PaymentOrder> pendingOrders = orderRepository.findByClubIdAndStatus(clubId, OrderStatus.PENDING);
+            boolean updatedAny = false;
+            for (PaymentOrder pending : pendingOrders) {
+                if (syncOrderWithPayOS(pending)) {
+                    updatedAny = true;
+                }
+            }
+            if (updatedAny) {
+                sub = subscriptionRepository.findFirstByClubIdAndStatusOrderByEndDateDesc(clubId, SubscriptionStatus.ACTIVE)
+                        .orElse(null);
+            }
+        }
         if (sub == null) return null;
         return mapSubscriptionToResponse(sub);
+    }
+
+    @Transactional
+    public boolean syncOrderWithPayOS(PaymentOrder order) {
+        if (order == null || order.getStatus() != OrderStatus.PENDING) {
+            return false;
+        }
+        try {
+            PaymentLinkData paymentLinkData = payOS.getPaymentLinkInformation(order.getOrderCode());
+            if (paymentLinkData != null) {
+                String statusStr = paymentLinkData.getStatus();
+                if ("PAID".equalsIgnoreCase(statusStr)) {
+                    order.setStatus(OrderStatus.PAID);
+                    order.setPaidAt(LocalDateTime.now());
+                    if (paymentLinkData.getTransactions() != null && !paymentLinkData.getTransactions().isEmpty()) {
+                        order.setTransactionNo(paymentLinkData.getTransactions().get(0).getReference());
+                    } else {
+                        order.setTransactionNo("PAYOS_" + order.getOrderCode());
+                    }
+                    orderRepository.save(order);
+                    if (order.getClub() != null) {
+                        activateClubSubscription(order);
+                    }
+                    return true;
+                } else if ("CANCELLED".equalsIgnoreCase(statusStr)) {
+                    order.setStatus(OrderStatus.CANCELLED);
+                    order.setCancelledAt(LocalDateTime.now());
+                    orderRepository.save(order);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Không thể tự động đồng bộ đơn hàng " + order.getOrderCode() + " từ PayOS API: " + e.getMessage());
+        }
+        return false;
     }
 
     private void activateClubSubscription(PaymentOrder order) {
