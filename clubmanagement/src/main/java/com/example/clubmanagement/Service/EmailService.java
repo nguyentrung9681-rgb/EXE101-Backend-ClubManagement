@@ -30,6 +30,12 @@ public class EmailService {
     @Value("${resend.from-email:onboarding@resend.dev}")
     private String resendFromEmail;
 
+    @Value("${brevo.api-key:}")
+    private String brevoApiKey;
+
+    @Value("${brevo.sender-email:Sclub.management.platform@gmail.com}")
+    private String brevoSenderEmail;
+
     @Autowired(required = false)
     public EmailService(JavaMailSender mailSender) {
         this.mailSender = mailSender;
@@ -68,19 +74,55 @@ public class EmailService {
                 resetUrl
             );
 
-        // Ưu tiên 1: Gửi qua Resend HTTP API (Port 443 HTTPS - Không bị Render chặn)
+        // Ưu tiên 1: Gửi qua Brevo HTTP API (Port 443 HTTPS - Gửi tới bất kỳ email nào không bắt buộc domain)
+        if (brevoApiKey != null && !brevoApiKey.isBlank()) {
+            sendViaBrevoApi(toEmail, subject, htmlContent);
+            return;
+        }
+
+        // Ưu tiên 2: Gửi qua Resend HTTP API (Port 443 HTTPS)
         if (resendApiKey != null && !resendApiKey.isBlank()) {
             sendViaResendApi(toEmail, subject, htmlContent);
             return;
         }
 
-        // Ưu tiên 2: Gửi qua SMTP truyền thống (Nếu có cấu hình SMTP)
+        // Ưu tiên 3: Gửi qua SMTP truyền thống (Nếu có cấu hình SMTP)
         if (mailSender != null && mailUsername != null && !mailUsername.isBlank()) {
             sendViaSmtp(toEmail, subject, htmlContent);
             return;
         }
 
-        log.warn("Chưa cấu hình RESEND_API_KEY hoặc SPRING_MAIL_USERNAME. Email thực tế chưa gửi đi nhưng mã OTP đã được in ở Log trên.");
+        log.warn("Chưa cấu hình BREVO_API_KEY, RESEND_API_KEY hoặc SPRING_MAIL_USERNAME. Email thực tế chưa gửi đi nhưng mã OTP đã được in ở Log trên.");
+    }
+
+    private void sendViaBrevoApi(String toEmail, String subject, String htmlContent) {
+        try {
+            log.info("Đang tiến hành gửi email tới {} qua Brevo HTTP API (Port 443 HTTPS)...", toEmail);
+            String url = "https://api.brevo.com/v3/smtp/email";
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", brevoApiKey.trim());
+            headers.set("accept", "application/json");
+
+            Map<String, Object> body = Map.of(
+                    "sender", Map.of("name", "S-Club Platform", "email", brevoSenderEmail),
+                    "to", List.of(Map.of("email", toEmail)),
+                    "subject", subject,
+                    "htmlContent", htmlContent
+            );
+
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("✅ ĐÃ GỬI EMAIL THÀNH CÔNG QUA BREVO HTTP API TỚI: {}", toEmail);
+            } else {
+                log.error("❌ KẾT QUẢ GỬI EMAIL QUA BREVO API THẤT BẠI: {} - {}", response.getStatusCode(), response.getBody());
+            }
+        } catch (Exception e) {
+            log.error("❌ LỖI KHI GỬI EMAIL QUA BREVO HTTP API TỚI {}: {}", toEmail, e.getMessage(), e);
+        }
     }
 
     private void sendViaResendApi(String toEmail, String subject, String htmlContent) {
