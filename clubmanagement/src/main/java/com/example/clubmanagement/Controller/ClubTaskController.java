@@ -64,7 +64,7 @@ public class ClubTaskController {
                 "</script></body></html>";
     }
 
-    @PostMapping("/trello/save-token")
+    @PostMapping({"/trello/save-token", "/trello/save_token"})
     public ResponseEntity<?> saveToken(@RequestParam Integer clubId, @RequestParam String token) {
         try {
             Club club = clubRepository.findById(clubId).orElseThrow(() -> new RuntimeException("Club not found"));

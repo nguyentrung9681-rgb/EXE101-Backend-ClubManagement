@@ -96,8 +96,7 @@ public class SecurityConfig {
                                 "/login/**",
                                 "/oauth2/**",
                                 "/api/google/callback",
-                                "/api/trello/webhook/**",
-                                "/api/trello/callback",
+                                "/api/trello/**",
                                 "/api/documents/webhook",
                                 "/api/packages/**",
                                 "/api/payments/**"
