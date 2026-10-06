@@ -20,6 +20,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 
 @Configuration
@@ -44,12 +45,23 @@ public class SecurityConfig {
     }
 
     @Bean
+    public FilterRegistrationBean<RateLimitingFilter> rateLimitingFilterRegistration(RateLimitingFilter filter) {
+        FilterRegistrationBean<RateLimitingFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
+        String cleanFrontendRedirectUrl = (frontendRedirectUrl != null && frontendRedirectUrl.endsWith("/"))
+                ? frontendRedirectUrl.substring(0, frontendRedirectUrl.length() - 1)
+                : frontendRedirectUrl;
+
         // Cấu hình các Allowed Origins cụ thể thay vì wildcard "*" để bảo mật CORS
         List<String> allowedOrigins = List.of(
-                frontendRedirectUrl,
+                cleanFrontendRedirectUrl,
                 "https://exe-ebon.vercel.app",
                 "http://localhost:3000",
                 "http://localhost:5173",
