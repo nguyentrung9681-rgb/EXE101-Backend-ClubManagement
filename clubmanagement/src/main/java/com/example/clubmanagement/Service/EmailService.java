@@ -36,6 +36,15 @@ public class EmailService {
     @Value("${brevo.sender-email:Sclub.management.platform@gmail.com}")
     private String brevoSenderEmail;
 
+    @Value("${mailjet.api-key:}")
+    private String mailjetApiKey;
+
+    @Value("${mailjet.secret-key:}")
+    private String mailjetSecretKey;
+
+    @Value("${mailjet.sender-email:Sclub.management.platform@gmail.com}")
+    private String mailjetSenderEmail;
+
     @Autowired(required = false)
     public EmailService(JavaMailSender mailSender) {
         this.mailSender = mailSender;
@@ -74,25 +83,74 @@ public class EmailService {
                 resetUrl
             );
 
-        // Ưu tiên 1: Gửi qua Brevo HTTP API (Port 443 HTTPS - Gửi tới bất kỳ email nào không bắt buộc domain)
+        // Ưu tiên 1: Gửi qua Mailjet HTTP API (Port 443 HTTPS - Gửi tới mọi email không bắt buộc custom domain)
+        if (mailjetApiKey != null && !mailjetApiKey.isBlank() && mailjetSecretKey != null && !mailjetSecretKey.isBlank()) {
+            sendViaMailjetApi(toEmail, recipientName, subject, htmlContent);
+            return;
+        }
+
+        // Ưu tiên 2: Gửi qua Brevo HTTP API (Port 443 HTTPS)
         if (brevoApiKey != null && !brevoApiKey.isBlank()) {
             sendViaBrevoApi(toEmail, subject, htmlContent);
             return;
         }
 
-        // Ưu tiên 2: Gửi qua Resend HTTP API (Port 443 HTTPS)
+        // Ưu tiên 3: Gửi qua Resend HTTP API (Port 443 HTTPS)
         if (resendApiKey != null && !resendApiKey.isBlank()) {
             sendViaResendApi(toEmail, subject, htmlContent);
             return;
         }
 
-        // Ưu tiên 3: Gửi qua SMTP truyền thống (Nếu có cấu hình SMTP)
+        // Ưu tiên 4: Gửi qua SMTP truyền thống (Nếu có cấu hình SMTP)
         if (mailSender != null && mailUsername != null && !mailUsername.isBlank()) {
             sendViaSmtp(toEmail, subject, htmlContent);
             return;
         }
 
-        log.warn("Chưa cấu hình BREVO_API_KEY, RESEND_API_KEY hoặc SPRING_MAIL_USERNAME. Email thực tế chưa gửi đi nhưng mã OTP đã được in ở Log trên.");
+        log.warn("Chưa cấu hình MAILJET_API_KEY, BREVO_API_KEY, RESEND_API_KEY hoặc SPRING_MAIL_USERNAME. Email thực tế chưa gửi đi nhưng mã OTP đã được in ở Log trên.");
+    }
+
+    private void sendViaMailjetApi(String toEmail, String recipientName, String subject, String htmlContent) {
+        try {
+            log.info("Đang tiến hành gửi email tới {} qua Mailjet HTTP API (Port 443 HTTPS)...", toEmail);
+            String url = "https://api.mailjet.com/v3.1/send";
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBasicAuth(mailjetApiKey.trim(), mailjetSecretKey.trim());
+
+            Map<String, Object> fromMap = Map.of(
+                    "Email", mailjetSenderEmail,
+                    "Name", "Hệ Thống S-Club"
+            );
+
+            Map<String, Object> toMap = Map.of(
+                    "Email", toEmail,
+                    "Name", recipientName != null ? recipientName : "Người dùng"
+            );
+
+            Map<String, Object> messageMap = Map.of(
+                    "From", fromMap,
+                    "To", List.of(toMap),
+                    "Subject", subject,
+                    "HTMLPart", htmlContent
+            );
+
+            Map<String, Object> body = Map.of(
+                    "Messages", List.of(messageMap)
+            );
+
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("✅ ĐÃ GỬI EMAIL THÀNH CÔNG QUA MAILJET HTTP API TỚI: {}", toEmail);
+            } else {
+                log.error("❌ KẾT QUẢ GỬI EMAIL QUA MAILJET API THẤT BẠI: {} - {}", response.getStatusCode(), response.getBody());
+            }
+        } catch (Exception e) {
+            log.error("❌ LỖI KHI GỬI EMAIL QUA MAILJET HTTP API TỚI {}: {}", toEmail, e.getMessage(), e);
+        }
     }
 
     private void sendViaBrevoApi(String toEmail, String subject, String htmlContent) {
