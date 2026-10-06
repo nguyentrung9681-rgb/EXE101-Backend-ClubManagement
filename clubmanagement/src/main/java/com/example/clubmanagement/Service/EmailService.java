@@ -4,19 +4,31 @@ import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
 public class EmailService {
 
     private final JavaMailSender mailSender;
+    private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${spring.mail.username:}")
     private String mailUsername;
+
+    @Value("${resend.api-key:}")
+    private String resendApiKey;
+
+    @Value("${resend.from-email:onboarding@resend.dev}")
+    private String resendFromEmail;
 
     @Autowired(required = false)
     public EmailService(JavaMailSender mailSender) {
@@ -56,11 +68,51 @@ public class EmailService {
                 resetUrl
             );
 
-        if (mailSender == null || mailUsername == null || mailUsername.isBlank()) {
-            log.warn("Chưa cấu hình SPRING_MAIL_USERNAME trong .env. Email thực tế chưa gửi đi nhưng mã OTP đã được in ở Log trên.");
+        // Ưu tiên 1: Gửi qua Resend HTTP API (Port 443 HTTPS - Không bị Render chặn)
+        if (resendApiKey != null && !resendApiKey.isBlank()) {
+            sendViaResendApi(toEmail, subject, htmlContent);
             return;
         }
 
+        // Ưu tiên 2: Gửi qua SMTP truyền thống (Nếu có cấu hình SMTP)
+        if (mailSender != null && mailUsername != null && !mailUsername.isBlank()) {
+            sendViaSmtp(toEmail, subject, htmlContent);
+            return;
+        }
+
+        log.warn("Chưa cấu hình RESEND_API_KEY hoặc SPRING_MAIL_USERNAME. Email thực tế chưa gửi đi nhưng mã OTP đã được in ở Log trên.");
+    }
+
+    private void sendViaResendApi(String toEmail, String subject, String htmlContent) {
+        try {
+            log.info("Đang tiến hành gửi email tới {} qua Resend HTTP API (Port 443 HTTPS)...", toEmail);
+            String url = "https://api.resend.com/emails";
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(resendApiKey.trim());
+
+            Map<String, Object> body = Map.of(
+                    "from", "S-Club <" + resendFromEmail + ">",
+                    "to", List.of(toEmail),
+                    "subject", subject,
+                    "html", htmlContent
+            );
+
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("✅ ĐÃ GỬI EMAIL THÀNH CÔNG QUA RESEND HTTP API TỚI: {}", toEmail);
+            } else {
+                log.error("❌ KẾT QUẢ GỬI EMAIL QUA RESEND API THẤT BẠI: {} - {}", response.getStatusCode(), response.getBody());
+            }
+        } catch (Exception e) {
+            log.error("❌ LỖI KHI GỬI EMAIL QUA RESEND HTTP API TỚI {}: {}", toEmail, e.getMessage(), e);
+        }
+    }
+
+    private void sendViaSmtp(String toEmail, String subject, String htmlContent) {
         try {
             log.info("Đang tiến hành kết nối Gmail SMTP ({}) để gửi email tới {}...", mailUsername, toEmail);
             MimeMessage message = mailSender.createMimeMessage();
