@@ -73,9 +73,9 @@ public class ClubDocumentController {
             @RequestParam(required = false) Integer eventId,
             @RequestParam String title,
             @Parameter(description = "Danh mục lọc trên web", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY"}))
-            @RequestParam(required = false) DocumentCategory category,
+            @RequestParam(required = false) String category,
             @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"MEETING_MINUTES", "EVENT_PLAN", "REPORT", "FINANCE", "OTHER"}))
-            @RequestParam DocumentType type
+            @RequestParam String type
     ) {
         try {
             Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
@@ -83,8 +83,8 @@ public class ClubDocumentController {
                     .clubId(clubId)
                     .eventId(eventId)
                     .title(title)
-                    .category(category != null ? category.name() : null)
-                    .documentType(type.name())
+                    .category(category)
+                    .documentType(type)
                     .build();
             ClubDocument doc = clubDocumentService.createDocument(request, effectiveUserId);
             return ResponseEntity.ok(mapToResponse(doc));

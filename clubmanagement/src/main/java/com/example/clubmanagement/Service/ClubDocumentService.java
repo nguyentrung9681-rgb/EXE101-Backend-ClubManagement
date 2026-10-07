@@ -94,16 +94,14 @@ public class ClubDocumentService {
         GoogleAccount googleAccount = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(userId)
                 .orElseThrow(() -> new RuntimeException("Vui lòng liên kết tài khoản Google trước khi tạo tài liệu!"));
 
-        DocumentCategory category = null;
-        if (request.getCategory() != null && !request.getCategory().trim().isEmpty()) {
-            try {
-                category = DocumentCategory.valueOf(request.getCategory().toUpperCase());
-            } catch (IllegalArgumentException e) {
-                // ignore
-            }
-        }
+        DocumentCategory category = parseCategory(request.getCategory());
         if (category == null) {
             category = (event != null) ? DocumentCategory.EVENT : DocumentCategory.CLUB_ACTIVITY;
+        }
+
+        DocumentType docType = parseDocumentType(request.getDocumentType());
+        if (docType == null) {
+            docType = DocumentType.OTHER;
         }
 
         // 3. Tạo record DB local (trạng thái Pending)
@@ -112,7 +110,7 @@ public class ClubDocumentService {
                 .event(event)
                 .title(request.getTitle())
                 .category(category)
-                .documentType(DocumentType.valueOf(request.getDocumentType().toUpperCase()))
+                .documentType(docType)
                 .createdBy(creator)
                 .syncStatus(SyncStatus.PENDING)
                 .build();
@@ -237,23 +235,8 @@ public class ClubDocumentService {
     public List<ClubDocument> getDocumentsByClubFiltered(Integer clubId, String search, String category, String type, String sortBy, String sortDir, Integer userId) {
         checkReadPermission(clubId, userId);
 
-        DocumentCategory docCategory = null;
-        if (category != null && !category.trim().isEmpty()) {
-            try {
-                docCategory = DocumentCategory.valueOf(category.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                // Bỏ qua nếu category không hợp lệ
-            }
-        }
-
-        DocumentType docType = null;
-        if (type != null && !type.trim().isEmpty()) {
-            try {
-                docType = DocumentType.valueOf(type.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                // Bỏ qua nếu type không hợp lệ
-            }
-        }
+        DocumentCategory docCategory = parseCategory(category);
+        DocumentType docType = parseDocumentType(type);
 
         Sort sort = Sort.unsorted();
         if (sortBy != null && !sortBy.trim().isEmpty()) {
@@ -267,6 +250,32 @@ public class ClubDocumentService {
 
         String searchPattern = (search != null && !search.trim().isEmpty()) ? search.trim() : null;
         return clubDocumentRepository.findClubDocumentsFiltered(clubId, searchPattern, docCategory, docType, sort);
+    }
+
+    public DocumentCategory parseCategory(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return null;
+        }
+        String clean = input.trim().toUpperCase().replace(" ", "_");
+        for (DocumentCategory cat : DocumentCategory.values()) {
+            if (cat.name().equalsIgnoreCase(clean) || cat.getDisplayName().equalsIgnoreCase(input.trim())) {
+                return cat;
+            }
+        }
+        return null;
+    }
+
+    public DocumentType parseDocumentType(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return null;
+        }
+        String clean = input.trim().toUpperCase().replace(" ", "_");
+        for (DocumentType dt : DocumentType.values()) {
+            if (dt.name().equalsIgnoreCase(clean) || dt.getDisplayName().equalsIgnoreCase(input.trim())) {
+                return dt;
+            }
+        }
+        return null;
     }
 
     @Transactional
