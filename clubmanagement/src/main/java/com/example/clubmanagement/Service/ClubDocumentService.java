@@ -125,13 +125,18 @@ public class ClubDocumentService {
             document.setGoogleDocumentId(docId);
             document.setDocumentUrl(googleResult.get("documentUrl"));
 
-            // 5. Đăng ký Webhook watch thay đổi
-            Map<String, Object> watchResult = googleDocumentService.watchDocumentChanges(docId, googleAccount);
-            document.setWebhookChannelId((String) watchResult.get("channelId"));
-            document.setWebhookResourceId((String) watchResult.get("resourceId"));
-            
-            long expEpoch = (Long) watchResult.get("expiration");
-            document.setWebhookExpiration(LocalDateTime.ofInstant(Instant.ofEpochMilli(expEpoch), ZoneId.systemDefault()));
+            // 5. Đăng ký Webhook watch thay đổi (thử đăng ký, nếu thất bại vẫn giữ tài liệu đã tạo)
+            try {
+                Map<String, Object> watchResult = googleDocumentService.watchDocumentChanges(docId, googleAccount);
+                document.setWebhookChannelId((String) watchResult.get("channelId"));
+                document.setWebhookResourceId((String) watchResult.get("resourceId"));
+                
+                long expEpoch = (Long) watchResult.get("expiration");
+                document.setWebhookExpiration(LocalDateTime.ofInstant(Instant.ofEpochMilli(expEpoch), ZoneId.systemDefault()));
+            } catch (Exception watchEx) {
+                System.err.println("Cảnh báo: Không thể đăng ký Watch Webhook cho Google Doc (" + docId + "): " + watchEx.getMessage());
+            }
+
             document.setSyncStatus(SyncStatus.SYNCED);
 
             // Lưu nội dung trống ban đầu làm revision 1

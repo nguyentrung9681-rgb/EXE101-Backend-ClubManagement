@@ -14,7 +14,7 @@ import java.util.UUID;
 @Service
 public class GoogleDocumentService {
 
-    @Value("${google.webhook-url}")
+    @Value("${google.webhook-url:${app.base-url:https://exe101-backend-clubmanagement.onrender.com}}")
     private String webhookBaseUrl;
 
     private final GoogleCalendarService googleCalendarService;
@@ -89,11 +89,16 @@ public class GoogleDocumentService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(activeAccount.getAccessToken());
 
+        String cleanBaseUrl = webhookBaseUrl != null ? webhookBaseUrl.trim().replaceAll("[\r\n]", "") : "";
+        if (cleanBaseUrl.endsWith("/")) {
+            cleanBaseUrl = cleanBaseUrl.substring(0, cleanBaseUrl.length() - 1);
+        }
+
         String channelId = UUID.randomUUID().toString();
         Map<String, Object> body = new HashMap<>();
         body.put("id", channelId);
         body.put("type", "web_hook");
-        body.put("address", webhookBaseUrl + "/api/documents/webhook");
+        body.put("address", cleanBaseUrl + "/api/documents/webhook");
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
         String url = "https://www.googleapis.com/drive/v3/files/" + documentId + "/watch";
