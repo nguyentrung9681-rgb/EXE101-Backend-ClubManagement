@@ -14,4 +14,5 @@ public interface GoogleSheetRepository extends JpaRepository<GoogleSheet, Intege
     // ─── Phân quyền theo CLB ───
     List<GoogleSheet> findByClubId(Integer clubId);
     Optional<GoogleSheet> findBySpreadsheetIdAndClubId(String spreadsheetId, Integer clubId);
+    void deleteByClubId(Integer clubId);
 }

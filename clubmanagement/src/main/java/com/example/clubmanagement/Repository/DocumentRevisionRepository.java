@@ -11,4 +11,5 @@ import java.util.Optional;
 public interface DocumentRevisionRepository extends JpaRepository<DocumentRevision, Integer> {
     List<DocumentRevision> findByClubDocumentIdOrderByVersionDesc(Integer clubDocumentId);
     Optional<DocumentRevision> findFirstByClubDocumentIdOrderByVersionDesc(Integer clubDocumentId);
+    void deleteByClubDocumentId(Integer clubDocumentId);
 }

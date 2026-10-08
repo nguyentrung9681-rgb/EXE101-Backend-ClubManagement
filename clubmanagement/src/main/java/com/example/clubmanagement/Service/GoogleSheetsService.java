@@ -5,6 +5,10 @@ import com.example.clubmanagement.Entity.GoogleAccount;
 import com.example.clubmanagement.Entity.GoogleSheet;
 import com.example.clubmanagement.Entity.SheetFormType;
 import com.example.clubmanagement.Entity.User;
+import com.example.clubmanagement.Entity.ClubMember;
+import com.example.clubmanagement.Enum.ClubMemberRole;
+import com.example.clubmanagement.Enum.ClubMemberStatus;
+import com.example.clubmanagement.Repository.ClubMemberRepository;
 import com.example.clubmanagement.Repository.ClubRepository;
 import com.example.clubmanagement.Repository.GoogleAccountRepository;
 import com.example.clubmanagement.Repository.GoogleSheetRepository;
@@ -38,6 +42,7 @@ public class GoogleSheetsService {
     private final UserRepository userRepository;
     private final ClubRepository clubRepository;
     private final ClubPermissionService clubPermissionService;
+    private final ClubMemberRepository clubMemberRepository;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -47,13 +52,15 @@ public class GoogleSheetsService {
                                GoogleCalendarService googleCalendarService,
                                UserRepository userRepository,
                                ClubRepository clubRepository,
-                               ClubPermissionService clubPermissionService) {
+                               ClubPermissionService clubPermissionService,
+                               ClubMemberRepository clubMemberRepository) {
         this.googleAccountRepository = googleAccountRepository;
         this.googleSheetRepository = googleSheetRepository;
         this.googleCalendarService = googleCalendarService;
         this.userRepository = userRepository;
         this.clubRepository = clubRepository;
         this.clubPermissionService = clubPermissionService;
+        this.clubMemberRepository = clubMemberRepository;
     }
 
     /**
@@ -74,11 +81,39 @@ public class GoogleSheetsService {
     /**
      * Lấy tài khoản Google hợp lệ (tự động làm mới access token nếu cần).
      */
+    private GoogleAccount getActiveGoogleAccount(Integer userId, Integer clubId) throws Exception {
+        Optional<GoogleAccount> userAccountOpt = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(userId);
+        if (userAccountOpt.isPresent()) {
+            try {
+                return googleCalendarService.refreshAccessToken(userAccountOpt.get());
+            } catch (Exception e) {
+                System.err.println("Google token của user " + userId + " không làm mới được: " + e.getMessage() + ". Đang thử tài khoản Chủ CLB...");
+            }
+        }
+
+        if (clubId != null) {
+            Optional<ClubMember> presidentOpt = clubMemberRepository.findByClubId(clubId).stream()
+                    .filter(m -> m.getRole() == ClubMemberRole.PRESIDENT && m.getStatus() == ClubMemberStatus.ACTIVE)
+                    .findFirst();
+
+            if (presidentOpt.isPresent()) {
+                Integer presidentUserId = presidentOpt.get().getUser().getUserId();
+                Optional<GoogleAccount> presidentAccountOpt = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(presidentUserId);
+                if (presidentAccountOpt.isPresent()) {
+                    try {
+                        return googleCalendarService.refreshAccessToken(presidentAccountOpt.get());
+                    } catch (Exception e) {
+                        System.err.println("Google token của Chủ CLB " + presidentUserId + " không làm mới được: " + e.getMessage());
+                    }
+                }
+            }
+        }
+
+        throw new RuntimeException("Tài khoản Google chưa được kết nối hoặc đã bị thu hồi quyền truy cập. Vui lòng kết nối lại tài khoản Google!");
+    }
+
     private GoogleAccount getActiveGoogleAccount(Integer userId) throws Exception {
-        GoogleAccount account = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(userId)
-                .orElseThrow(() -> new RuntimeException(
-                        "Tài khoản Google chưa được kết nối! Vui lòng liên kết tài khoản trước."));
-        return googleCalendarService.refreshAccessToken(account);
+        return getActiveGoogleAccount(userId, null);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -97,13 +132,13 @@ public class GoogleSheetsService {
     @Transactional
     public GoogleSheet createSheet(Integer userId, Integer clubId, String title, SheetFormType type) throws Exception {
         // ── Kiểm tra phân quyền ──
-        clubPermissionService.requireCanCreate(userId, clubId);
+        clubPermissionService.requireCanCreateSheet(userId, clubId);
 
         if (type == null) {
             throw new IllegalArgumentException("Loại (type) là bắt buộc! Vui lòng chọn EVENT hoặc CLUB_ACTIVITIES.");
         }
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng trong hệ thống!"));
         Club club = clubRepository.findById(clubId)
@@ -176,7 +211,7 @@ public class GoogleSheetsService {
                 .orElseThrow(() -> new SecurityException(
                         "File Google Sheet này không thuộc CLB của bạn hoặc không tồn tại."));
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(activeAccount.getAccessToken());
@@ -220,14 +255,14 @@ public class GoogleSheetsService {
                                     String spreadsheetId, String range,
                                     List<List<Object>> values) throws Exception {
         // Kiểm tra quyền ghi
-        clubPermissionService.requireCanWrite(userId, clubId);
+        clubPermissionService.requireCanEditSheetData(userId, clubId);
 
         // Kiểm tra sheet thuộc CLB đang thao tác
         googleSheetRepository.findBySpreadsheetIdAndClubId(spreadsheetId, clubId)
                 .orElseThrow(() -> new SecurityException(
                         "File Google Sheet này không thuộc CLB của bạn hoặc không tồn tại."));
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -263,14 +298,14 @@ public class GoogleSheetsService {
         }
 
         // Kiểm tra quyền cập nhật
-        clubPermissionService.requireCanWrite(userId, clubId);
+        clubPermissionService.requireCanEditSheetTitle(userId, clubId);
 
         // Kiểm tra sheet thuộc CLB đang thao tác
         GoogleSheet googleSheet = googleSheetRepository.findBySpreadsheetIdAndClubId(spreadsheetId, clubId)
                 .orElseThrow(() -> new SecurityException(
                         "File Google Sheet này không thuộc CLB của bạn hoặc không tồn tại."));
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -312,7 +347,7 @@ public class GoogleSheetsService {
         }
 
         // Kiểm tra quyền cập nhật
-        clubPermissionService.requireCanWrite(userId, clubId);
+        clubPermissionService.requireCanEditSheetType(userId, clubId);
 
         // Kiểm tra sheet thuộc CLB đang thao tác
         GoogleSheet googleSheet = googleSheetRepository.findBySpreadsheetIdAndClubId(spreadsheetId, clubId)
@@ -334,14 +369,14 @@ public class GoogleSheetsService {
     @Transactional
     public void deleteSheet(Integer userId, Integer clubId, String spreadsheetId) throws Exception {
         // Kiểm tra quyền xóa
-        clubPermissionService.requireCanDelete(userId, clubId);
+        clubPermissionService.requireCanDeleteSheet(userId, clubId);
 
         // Lấy sheet và kiểm tra thuộc CLB này
         GoogleSheet googleSheet = googleSheetRepository.findBySpreadsheetIdAndClubId(spreadsheetId, clubId)
                 .orElseThrow(() -> new RuntimeException(
                         "Không tìm thấy file sheet trong CLB này hoặc bạn không có quyền xóa!"));
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(activeAccount.getAccessToken());

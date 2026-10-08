@@ -59,16 +59,8 @@ public class SecurityConfig {
                 ? frontendRedirectUrl.substring(0, frontendRedirectUrl.length() - 1)
                 : frontendRedirectUrl;
 
-        // Cấu hình các Allowed Origins cụ thể thay vì wildcard "*" để bảo mật CORS
-        List<String> allowedOrigins = List.of(
-                cleanFrontendRedirectUrl,
-                "https://exe-ebon.vercel.app",
-                "http://localhost:3000",
-                "http://localhost:5173",
-                "http://127.0.0.1:3000",
-                "http://127.0.0.1:5173"
-        );
-        configuration.setAllowedOriginPatterns(allowedOrigins);
+        // Cho phép tất cả Origin Patterns (bao gồm Swagger UI ở localhost:8080, Render, Vercel...)
+        configuration.setAllowedOriginPatterns(List.of("*"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers"));
         configuration.setExposedHeaders(List.of("Authorization"));
@@ -85,6 +77,13 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"error\": \"Yêu cầu không được xác thực! Vui lòng nhấn nút 'Authorize' (khóa xanh) trên Swagger UI và nhập Token: Bearer <your_jwt_token>\"}");
+                        })
+                )
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
                         .contentTypeOptions(contentType -> {}) // X-Content-Type-Options: nosniff

@@ -197,4 +197,18 @@ public class ChatController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
+
+    /**
+     * 9. Lấy danh sách các Emoji được hỗ trợ phân theo danh mục cho giao diện chọn Emoji (Emoji Picker)
+     * GET /api/chat/emojis
+     */
+    @io.swagger.v3.oas.annotations.Operation(summary = "Lấy danh sách Emoji phân theo danh mục (cho Emoji Picker)")
+    @GetMapping("/emojis")
+    public ResponseEntity<?> getAvailableEmojis() {
+        try {
+            return ResponseEntity.ok(chatService.getAvailableEmojis());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 }

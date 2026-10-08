@@ -14,4 +14,5 @@ public interface GoogleFormRepository extends JpaRepository<GoogleForm, Integer>
     // ─── Phân quyền theo CLB ───
     List<GoogleForm> findByClubId(Integer clubId);
     Optional<GoogleForm> findByFormIdAndClubId(String formId, Integer clubId);
+    void deleteByClubId(Integer clubId);
 }

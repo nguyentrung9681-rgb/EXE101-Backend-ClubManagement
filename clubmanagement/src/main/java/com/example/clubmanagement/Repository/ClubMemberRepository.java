@@ -13,6 +13,7 @@ public interface ClubMemberRepository extends JpaRepository<ClubMember, Integer>
     Optional<ClubMember> findByClubIdAndUserUserId(Integer clubId, Integer userId);
     List<ClubMember> findByClubId(Integer clubId);
     List<ClubMember> findByUserUserId(Integer userId);
+    List<ClubMember> findByDepartmentId(Integer departmentId);
 
     // ─── Phân quyền theo CLB ───
     /** Tìm thành viên ACTIVE của CLB */

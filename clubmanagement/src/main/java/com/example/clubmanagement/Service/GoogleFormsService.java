@@ -1,11 +1,15 @@
 package com.example.clubmanagement.Service;
 
 import com.example.clubmanagement.Entity.Club;
+import com.example.clubmanagement.Entity.ClubMember;
 import com.example.clubmanagement.Entity.GoogleAccount;
 import com.example.clubmanagement.Entity.GoogleForm;
 import com.example.clubmanagement.Entity.SheetFormType;
 import com.example.clubmanagement.Entity.User;
 import com.example.clubmanagement.Entity.GoogleSheet;
+import com.example.clubmanagement.Enum.ClubMemberRole;
+import com.example.clubmanagement.Enum.ClubMemberStatus;
+import com.example.clubmanagement.Repository.ClubMemberRepository;
 import com.example.clubmanagement.Repository.ClubRepository;
 import com.example.clubmanagement.Repository.GoogleAccountRepository;
 import com.example.clubmanagement.Repository.GoogleFormRepository;
@@ -42,6 +46,7 @@ public class GoogleFormsService {
     private final UserRepository userRepository;
     private final ClubRepository clubRepository;
     private final ClubPermissionService clubPermissionService;
+    private final ClubMemberRepository clubMemberRepository;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -52,7 +57,8 @@ public class GoogleFormsService {
                               GoogleCalendarService googleCalendarService,
                               UserRepository userRepository,
                               ClubRepository clubRepository,
-                              ClubPermissionService clubPermissionService) {
+                              ClubPermissionService clubPermissionService,
+                              ClubMemberRepository clubMemberRepository) {
         this.googleAccountRepository = googleAccountRepository;
         this.googleFormRepository = googleFormRepository;
         this.googleSheetRepository = googleSheetRepository;
@@ -60,6 +66,7 @@ public class GoogleFormsService {
         this.userRepository = userRepository;
         this.clubRepository = clubRepository;
         this.clubPermissionService = clubPermissionService;
+        this.clubMemberRepository = clubMemberRepository;
     }
 
     /**
@@ -84,11 +91,39 @@ public class GoogleFormsService {
     /**
      * Lấy tài khoản Google hợp lệ (tự động làm mới access token nếu cần).
      */
+    private GoogleAccount getActiveGoogleAccount(Integer userId, Integer clubId) throws Exception {
+        Optional<GoogleAccount> userAccountOpt = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(userId);
+        if (userAccountOpt.isPresent()) {
+            try {
+                return googleCalendarService.refreshAccessToken(userAccountOpt.get());
+            } catch (Exception e) {
+                System.err.println("Google token của user " + userId + " không làm mới được: " + e.getMessage() + ". Đang thử tài khoản Chủ CLB...");
+            }
+        }
+
+        if (clubId != null) {
+            Optional<ClubMember> presidentOpt = clubMemberRepository.findByClubId(clubId).stream()
+                    .filter(m -> m.getRole() == ClubMemberRole.PRESIDENT && m.getStatus() == ClubMemberStatus.ACTIVE)
+                    .findFirst();
+
+            if (presidentOpt.isPresent()) {
+                Integer presidentUserId = presidentOpt.get().getUser().getUserId();
+                Optional<GoogleAccount> presidentAccountOpt = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(presidentUserId);
+                if (presidentAccountOpt.isPresent()) {
+                    try {
+                        return googleCalendarService.refreshAccessToken(presidentAccountOpt.get());
+                    } catch (Exception e) {
+                        System.err.println("Google token của Chủ CLB " + presidentUserId + " không làm mới được: " + e.getMessage());
+                    }
+                }
+            }
+        }
+
+        throw new RuntimeException("Tài khoản Google chưa được kết nối hoặc đã bị thu hồi quyền truy cập. Vui lòng kết nối lại tài khoản Google!");
+    }
+
     private GoogleAccount getActiveGoogleAccount(Integer userId) throws Exception {
-        GoogleAccount account = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(userId)
-                .orElseThrow(() -> new RuntimeException(
-                        "Tài khoản Google chưa được kết nối! Vui lòng liên kết tài khoản trước."));
-        return googleCalendarService.refreshAccessToken(account);
+        return getActiveGoogleAccount(userId, null);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -107,13 +142,13 @@ public class GoogleFormsService {
     @Transactional
     public GoogleForm createForm(Integer userId, Integer clubId, String title, SheetFormType type) throws Exception {
         // ── Kiểm tra phân quyền ──
-        clubPermissionService.requireCanCreate(userId, clubId);
+        clubPermissionService.requireCanCreateForm(userId, clubId);
 
         if (type == null) {
             throw new IllegalArgumentException("Loại (type) là bắt buộc! Vui lòng chọn EVENT hoặc CLUB_ACTIVITIES.");
         }
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng trong hệ thống!"));
         Club club = clubRepository.findById(clubId)
@@ -228,7 +263,7 @@ public class GoogleFormsService {
                 .orElseThrow(() -> new SecurityException(
                         "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(activeAccount.getAccessToken());
@@ -257,7 +292,7 @@ public class GoogleFormsService {
                 .orElseThrow(() -> new SecurityException(
                         "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(activeAccount.getAccessToken());
@@ -295,7 +330,7 @@ public class GoogleFormsService {
             throw new IllegalStateException("Google Form này chưa được liên kết với Google Sheet.");
         }
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(activeAccount.getAccessToken());
@@ -402,15 +437,15 @@ public class GoogleFormsService {
     @Transactional
     public String addQuestion(Integer userId, Integer clubId, String formId,
                               GoogleFormQuestionRequest questionRequest) throws Exception {
-        // Kiểm tra quyền comment
-        clubPermissionService.requireCanComment(userId, clubId);
+        // Kiểm tra quyền chỉnh sửa dữ liệu form (thêm câu hỏi)
+        clubPermissionService.requireCanEditFormData(userId, clubId);
 
         // Kiểm tra form thuộc CLB đang thao tác
         googleFormRepository.findByFormIdAndClubId(formId, clubId)
                 .orElseThrow(() -> new SecurityException(
                         "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -487,14 +522,14 @@ public class GoogleFormsService {
         }
 
         // Kiểm tra quyền cập nhật
-        clubPermissionService.requireCanWrite(userId, clubId);
+        clubPermissionService.requireCanEditFormTitle(userId, clubId);
 
         // Kiểm tra form thuộc CLB đang thao tác
         GoogleForm googleForm = googleFormRepository.findByFormIdAndClubId(formId, clubId)
                 .orElseThrow(() -> new SecurityException(
                         "File Google Form này không thuộc CLB của bạn hoặc không tồn tại."));
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -522,6 +557,45 @@ public class GoogleFormsService {
         }
 
         googleForm.setTitle(newTitle.trim());
+
+        // Đồng bộ tiêu đề cho Google Sheet phản hồi liên kết (nếu có)
+        if (googleForm.getLinkedSpreadsheetId() != null) {
+            String newSheetTitle = newTitle.trim() + " (Phản hồi)";
+
+            // 1. Cập nhật tiêu đề spreadsheet trên Google Sheets API
+            try {
+                Map<String, Object> updateProperties = new HashMap<>();
+                Map<String, Object> properties = new HashMap<>();
+                properties.put("title", newSheetTitle);
+                updateProperties.put("properties", properties);
+                updateProperties.put("fields", "title");
+
+                Map<String, Object> sheetRequestItem = new HashMap<>();
+                sheetRequestItem.put("updateSpreadsheetProperties", updateProperties);
+
+                Map<String, Object> sheetBody = new HashMap<>();
+                sheetBody.put("requests", List.of(sheetRequestItem));
+
+                HttpEntity<Map<String, Object>> sheetRequest = new HttpEntity<>(sheetBody, headers);
+                String sheetUrl = String.format("https://sheets.googleapis.com/v4/spreadsheets/%s:batchUpdate",
+                        googleForm.getLinkedSpreadsheetId());
+
+                ResponseEntity<String> sheetResponse = restTemplate.postForEntity(sheetUrl, sheetRequest, String.class);
+                if (!sheetResponse.getStatusCode().is2xxSuccessful()) {
+                    System.err.println("Cập nhật tiêu đề Google Sheet liên kết trên API thất bại: " + sheetResponse.getBody());
+                }
+            } catch (Exception e) {
+                System.err.println("Lỗi khi cập nhật tiêu đề Google Sheet liên kết qua API: " + e.getMessage());
+            }
+
+            // 2. Cập nhật tiêu đề trong cơ sở dữ liệu local
+            googleSheetRepository.findBySpreadsheetIdAndClubId(googleForm.getLinkedSpreadsheetId(), clubId)
+                    .ifPresent(sheet -> {
+                        sheet.setTitle(newSheetTitle);
+                        googleSheetRepository.save(sheet);
+                    });
+        }
+
         return googleFormRepository.save(googleForm);
     }
 
@@ -536,7 +610,7 @@ public class GoogleFormsService {
         }
 
         // Kiểm tra quyền cập nhật
-        clubPermissionService.requireCanWrite(userId, clubId);
+        clubPermissionService.requireCanEditFormType(userId, clubId);
 
         // Kiểm tra form thuộc CLB đang thao tác
         GoogleForm googleForm = googleFormRepository.findByFormIdAndClubId(formId, clubId)
@@ -563,24 +637,28 @@ public class GoogleFormsService {
 
     /**
      * Xóa Google Form khỏi hệ thống và Google Drive.
+     * Tùy chọn xóa luôn file Google Sheet phản hồi liên kết nếu deleteLinkedSheet = true.
      * Yêu cầu: người dùng là PRESIDENT hoặc TREASURER của CLB sở hữu Form đó.
      */
     @Transactional
-    public void deleteForm(Integer userId, Integer clubId, String formId) throws Exception {
+    public void deleteForm(Integer userId, Integer clubId, String formId, Boolean deleteLinkedSheet) throws Exception {
         // Kiểm tra quyền xóa
-        clubPermissionService.requireCanDelete(userId, clubId);
+        clubPermissionService.requireCanDeleteForm(userId, clubId);
 
         // Lấy form và kiểm tra thuộc CLB này
         GoogleForm googleForm = googleFormRepository.findByFormIdAndClubId(formId, clubId)
                 .orElseThrow(() -> new RuntimeException(
                         "Không tìm thấy biểu mẫu trong CLB này hoặc bạn không có quyền xóa!"));
 
-        GoogleAccount activeAccount = getActiveGoogleAccount(userId);
+        String linkedSpreadsheetId = googleForm.getLinkedSpreadsheetId();
+
+        GoogleAccount activeAccount = getActiveGoogleAccount(userId, clubId);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(activeAccount.getAccessToken());
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
+        // 1. Xóa Google Form trên Google Drive
         String url = "https://www.googleapis.com/drive/v3/files/" + formId;
         try {
             ResponseEntity<Void> response = restTemplate.exchange(url, HttpMethod.DELETE, entity, Void.class);
@@ -591,7 +669,33 @@ public class GoogleFormsService {
             System.err.println("Lỗi khi kết nối Google Drive API để xóa form: " + e.getMessage());
         }
 
+        // 2. Nếu chọn xóa luôn file Google Sheet phản hồi liên kết
+        if (Boolean.TRUE.equals(deleteLinkedSheet) && linkedSpreadsheetId != null) {
+            String sheetUrl = "https://www.googleapis.com/drive/v3/files/" + linkedSpreadsheetId;
+            try {
+                ResponseEntity<Void> sheetResponse = restTemplate.exchange(sheetUrl, HttpMethod.DELETE, entity, Void.class);
+                if (!sheetResponse.getStatusCode().is2xxSuccessful() && sheetResponse.getStatusCode() != HttpStatus.NOT_FOUND) {
+                    System.err.println("Xóa file Google Sheet liên kết trên Google Drive thất bại: " + sheetResponse.getStatusCode());
+                }
+            } catch (Exception e) {
+                System.err.println("Lỗi khi kết nối Google Drive API để xóa Google Sheet liên kết: " + e.getMessage());
+            }
+
+            // Xóa record GoogleSheet trong cơ sở dữ liệu local
+            googleSheetRepository.findBySpreadsheetIdAndClubId(linkedSpreadsheetId, clubId)
+                    .ifPresent(googleSheetRepository::delete);
+        }
+
+        // 3. Xóa record GoogleForm trong cơ sở dữ liệu local
         googleFormRepository.delete(googleForm);
+    }
+
+    /**
+     * Overload duy trì tính tương thích cũ (mặc định không xóa Google Sheet liên kết).
+     */
+    @Transactional
+    public void deleteForm(Integer userId, Integer clubId, String formId) throws Exception {
+        deleteForm(userId, clubId, formId, false);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ package com.example.clubmanagement.dto;
 
 import lombok.*;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
@@ -15,6 +16,16 @@ public class ClubResponse {
     private String visibility;
     private Integer createdByUserId;
     private String createdByName;
+    private List<UserSummary> deletionPermittedUsers;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @Getter @Setter
+    @NoArgsConstructor @AllArgsConstructor
+    @Builder
+    public static class UserSummary {
+        private Integer userId;
+        private String fullName;
+        private String email;
+    }
 }

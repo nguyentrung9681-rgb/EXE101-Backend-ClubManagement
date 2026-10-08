@@ -8,6 +8,7 @@ import com.example.clubmanagement.Enum.ClubMemberStatus;
 import com.example.clubmanagement.Repository.ClubMemberRepository;
 import com.example.clubmanagement.Repository.ClubRepository;
 import com.example.clubmanagement.Repository.DepartmentRepository;
+import com.example.clubmanagement.Repository.ChatMessageRepository;
 import com.example.clubmanagement.dto.DepartmentRequest;
 import com.example.clubmanagement.dto.DepartmentResponse;
 import org.springframework.stereotype.Service;
@@ -22,13 +23,16 @@ public class DepartmentService {
     private final DepartmentRepository departmentRepository;
     private final ClubRepository clubRepository;
     private final ClubMemberRepository clubMemberRepository;
+    private final ChatMessageRepository chatMessageRepository;
 
     public DepartmentService(DepartmentRepository departmentRepository,
                              ClubRepository clubRepository,
-                             ClubMemberRepository clubMemberRepository) {
+                             ClubMemberRepository clubMemberRepository,
+                             ChatMessageRepository chatMessageRepository) {
         this.departmentRepository = departmentRepository;
         this.clubRepository = clubRepository;
         this.clubMemberRepository = clubMemberRepository;
+        this.chatMessageRepository = chatMessageRepository;
     }
 
     /**
@@ -147,6 +151,52 @@ public class DepartmentService {
 
         department = departmentRepository.save(department);
         return mapToDepartmentResponse(department);
+    }
+
+    /**
+     * Xóa phòng ban. Chỉ chủ nhiệm câu lạc bộ (PRESIDENT) mới có quyền xóa.
+     */
+    @Transactional
+    public void deleteDepartment(Integer clubId, Integer departmentId, Integer requesterUserId) {
+        checkPresidentPrivilege(clubId, requesterUserId);
+
+        Department department = departmentRepository.findById(departmentId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng ban!"));
+
+        if (!department.getClub().getId().equals(clubId)) {
+            throw new RuntimeException("Phòng ban này không thuộc câu lạc bộ chỉ định!");
+        }
+
+        // 1. Gỡ thông tin Trưởng ban (nếu có) để tránh ràng buộc khóa ngoại vòng
+        if (department.getHead() != null) {
+            ClubMember head = department.getHead();
+            if (head.getRole() == ClubMemberRole.DEPARTMENT_HEAD) {
+                head.setRole(ClubMemberRole.MEMBER);
+                clubMemberRepository.save(head);
+            }
+            department.setHead(null);
+            departmentRepository.save(department);
+        }
+
+        // 2. Cập nhật các thành viên thuộc phòng ban này thành không thuộc phòng ban nào (department = null)
+        List<ClubMember> membersInDept = clubMemberRepository.findByDepartmentId(departmentId);
+        for (ClubMember member : membersInDept) {
+            member.setDepartment(null);
+            if (member.getRole() == ClubMemberRole.DEPARTMENT_HEAD) {
+                member.setRole(ClubMemberRole.MEMBER);
+            }
+            clubMemberRepository.save(member);
+        }
+
+        // 3. Xóa các tin nhắn chat trong phòng ban
+        try {
+            chatMessageRepository.deleteByDepartmentId(departmentId);
+        } catch (Exception e) {
+            System.err.println("Lỗi khi xóa tin nhắn chat phòng ban: " + e.getMessage());
+        }
+
+        // 4. Xóa phòng ban khỏi cơ sở dữ liệu
+        departmentRepository.delete(department);
     }
 
     /**

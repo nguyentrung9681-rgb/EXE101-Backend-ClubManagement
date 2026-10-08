@@ -80,6 +80,25 @@ public class DepartmentController {
     }
 
     /**
+     * Xóa phòng ban. Chỉ chủ nhiệm (PRESIDENT) mới có quyền xóa.
+     * DELETE /api/clubs/{clubId}/departments/{departmentId}?requesterUserId={id}
+     */
+    @DeleteMapping("/{departmentId}")
+    public ResponseEntity<?> deleteDepartment(@PathVariable Integer clubId,
+                                               @PathVariable Integer departmentId,
+                                               @RequestParam(required = false) Integer requesterUserId) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            departmentService.deleteDepartment(clubId, departmentId, effectiveUserId);
+            return ResponseEntity.ok(Map.of("message", "Xóa phòng ban thành công!"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * Kiểm tra quyền truy cập không gian chat phòng ban.
      * GET /api/clubs/{clubId}/departments/{departmentId}/chat-access?userId={id}
      */

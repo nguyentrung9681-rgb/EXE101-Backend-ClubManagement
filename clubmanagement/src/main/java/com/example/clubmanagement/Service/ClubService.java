@@ -12,6 +12,20 @@ import com.example.clubmanagement.Repository.ClubMemberRepository;
 import com.example.clubmanagement.Repository.ClubRepository;
 import com.example.clubmanagement.Repository.DepartmentRepository;
 import com.example.clubmanagement.Repository.UserRepository;
+import com.example.clubmanagement.Entity.ClubDocument;
+import com.example.clubmanagement.Entity.ClubEvent;
+import com.example.clubmanagement.Repository.ChatMessageRepository;
+import com.example.clubmanagement.Repository.ClubDocumentRepository;
+import com.example.clubmanagement.Repository.ClubEventRepository;
+import com.example.clubmanagement.Repository.ClubSubscriptionRepository;
+import com.example.clubmanagement.Repository.ClubTaskRepository;
+import com.example.clubmanagement.Repository.ClubTrelloConfigRepository;
+import com.example.clubmanagement.Repository.DocumentRevisionRepository;
+import com.example.clubmanagement.Repository.EventGoogleSyncRepository;
+import com.example.clubmanagement.Repository.GoogleFormRepository;
+import com.example.clubmanagement.Repository.GoogleSheetRepository;
+import com.example.clubmanagement.Repository.PaymentOrderRepository;
+import com.example.clubmanagement.Repository.ClubGooglePermissionRepository;
 import com.example.clubmanagement.dto.UpdateMemberRoleDeptRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,12 +40,52 @@ public class ClubService {
     private final ClubMemberRepository clubMemberRepository;
     private final UserRepository userRepository;
     private final DepartmentRepository departmentRepository;
+    private final ClubTaskRepository clubTaskRepository;
+    private final ClubEventRepository clubEventRepository;
+    private final ClubDocumentRepository clubDocumentRepository;
+    private final DocumentRevisionRepository documentRevisionRepository;
+    private final EventGoogleSyncRepository eventGoogleSyncRepository;
+    private final ClubSubscriptionRepository clubSubscriptionRepository;
+    private final PaymentOrderRepository paymentOrderRepository;
+    private final ChatMessageRepository chatMessageRepository;
 
-    public ClubService(ClubRepository clubRepository, ClubMemberRepository clubMemberRepository, UserRepository userRepository, DepartmentRepository departmentRepository) {
+    private final GoogleFormRepository googleFormRepository;
+    private final GoogleSheetRepository googleSheetRepository;
+    private final ClubTrelloConfigRepository clubTrelloConfigRepository;
+    private final ClubGooglePermissionRepository clubGooglePermissionRepository;
+
+    public ClubService(ClubRepository clubRepository,
+                       ClubMemberRepository clubMemberRepository,
+                       UserRepository userRepository,
+                       DepartmentRepository departmentRepository,
+                       ClubTaskRepository clubTaskRepository,
+                       ClubEventRepository clubEventRepository,
+                       ClubDocumentRepository clubDocumentRepository,
+                       DocumentRevisionRepository documentRevisionRepository,
+                       EventGoogleSyncRepository eventGoogleSyncRepository,
+                       ClubSubscriptionRepository clubSubscriptionRepository,
+                       PaymentOrderRepository paymentOrderRepository,
+                       ChatMessageRepository chatMessageRepository,
+                       GoogleFormRepository googleFormRepository,
+                       GoogleSheetRepository googleSheetRepository,
+                       ClubTrelloConfigRepository clubTrelloConfigRepository,
+                       ClubGooglePermissionRepository clubGooglePermissionRepository) {
         this.clubRepository = clubRepository;
         this.clubMemberRepository = clubMemberRepository;
         this.userRepository = userRepository;
         this.departmentRepository = departmentRepository;
+        this.clubTaskRepository = clubTaskRepository;
+        this.clubEventRepository = clubEventRepository;
+        this.clubDocumentRepository = clubDocumentRepository;
+        this.documentRevisionRepository = documentRevisionRepository;
+        this.eventGoogleSyncRepository = eventGoogleSyncRepository;
+        this.clubSubscriptionRepository = clubSubscriptionRepository;
+        this.paymentOrderRepository = paymentOrderRepository;
+        this.chatMessageRepository = chatMessageRepository;
+        this.googleFormRepository = googleFormRepository;
+        this.googleSheetRepository = googleSheetRepository;
+        this.clubTrelloConfigRepository = clubTrelloConfigRepository;
+        this.clubGooglePermissionRepository = clubGooglePermissionRepository;
     }
 
     /**
@@ -190,11 +244,13 @@ public class ClubService {
     public ClubMember updateMemberRoleDept(Integer clubId, Integer memberId, Integer requesterUserId, UpdateMemberRoleDeptRequest request) {
         checkPresidentPrivilege(clubId, requesterUserId);
 
-        ClubMember member = clubMemberRepository.findById(memberId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy thành viên!"));
+        ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(clubId, memberId)
+                .orElseGet(() -> clubMemberRepository.findById(memberId)
+                        .filter(m -> m.getClub().getId().equals(clubId))
+                        .orElse(null));
 
-        if (!member.getClub().getId().equals(clubId)) {
-            throw new RuntimeException("Thành viên này không thuộc câu lạc bộ này!");
+        if (member == null) {
+            throw new RuntimeException("Không tìm thấy thành viên này trong câu lạc bộ!");
         }
 
         // Cập nhật phòng ban
@@ -263,6 +319,63 @@ public class ClubService {
     }
 
     /**
+     * Trao quyền chủ nhiệm cho một thành viên khác trong câu lạc bộ.
+     * Người chủ nhiệm hiện tại sẽ chuyển thành role MEMBER.
+     * Không được trao quyền cho chính mình và không được trao cho người giữ chức vụ thủ quỹ (TREASURER).
+     */
+    @Transactional
+    public ClubMember transferPresident(Integer clubId, Integer targetMemberId, Integer requesterUserId) {
+        // 1. Kiểm tra người thực hiện có phải là Chủ nhiệm (PRESIDENT) hiện tại hay không
+        ClubMember currentPresident = clubMemberRepository.findByClubIdAndUserUserId(clubId, requesterUserId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải là thành viên của câu lạc bộ này!"));
+
+        if (currentPresident.getRole() != ClubMemberRole.PRESIDENT || currentPresident.getStatus() != ClubMemberStatus.ACTIVE) {
+            throw new SecurityException("Chỉ chủ nhiệm câu lạc bộ hiện tại mới có quyền trao lại quyền chủ nhiệm!");
+        }
+
+        // 2. Tìm thành viên được nhận quyền chủ nhiệm (hỗ trợ tìm cả theo userId lẫn memberId trong CLB)
+        ClubMember targetMember = clubMemberRepository.findByClubIdAndUserUserId(clubId, targetMemberId)
+                .orElseGet(() -> clubMemberRepository.findById(targetMemberId)
+                        .filter(m -> m.getClub().getId().equals(clubId))
+                        .orElse(null));
+
+        if (targetMember == null) {
+            throw new RuntimeException("Không tìm thấy thành viên này trong câu lạc bộ!");
+        }
+
+        if (targetMember.getStatus() != ClubMemberStatus.ACTIVE) {
+            throw new RuntimeException("Thành viên được nhận quyền phải ở trạng thái đang hoạt động (ACTIVE)!");
+        }
+
+        // 3. Ràng buộc: Không thể trao quyền cho chính mình
+        if (targetMember.getId().equals(currentPresident.getId())) {
+            throw new IllegalArgumentException("Bạn không thể trao quyền chủ nhiệm cho chính mình!");
+        }
+
+        // 4. Ràng buộc: Không thể trao quyền cho người đang giữ chức vụ thủ quỹ (TREASURER)
+        if (targetMember.getRole() == ClubMemberRole.TREASURER) {
+            throw new IllegalArgumentException("Không thể trao quyền chủ nhiệm cho thành viên đang giữ chức vụ thủ quỹ! Vui lòng chuyển đổi vai trò của thành viên này trước.");
+        }
+
+        // 5. Nếu thành viên nhận quyền đang là Trưởng ban (DEPARTMENT_HEAD), gỡ vai trò Trưởng ban ở phòng ban đó
+        if (targetMember.getRole() == ClubMemberRole.DEPARTMENT_HEAD && targetMember.getDepartment() != null) {
+            Department dept = targetMember.getDepartment();
+            if (dept.getHead() != null && dept.getHead().getId().equals(targetMember.getId())) {
+                dept.setHead(null);
+                departmentRepository.save(dept);
+            }
+        }
+
+        // 6. Đổi vai trò của Chủ nhiệm hiện tại thành MEMBER
+        currentPresident.setRole(ClubMemberRole.MEMBER);
+        clubMemberRepository.save(currentPresident);
+
+        // 7. Gán vai trò PRESIDENT cho thành viên mới được chọn
+        targetMember.setRole(ClubMemberRole.PRESIDENT);
+        return clubMemberRepository.save(targetMember);
+    }
+
+    /**
      * Tạm khóa thành viên (Chủ nhiệm chuyển trạng thái User thành INACTIVE).
      */
     @Transactional
@@ -283,6 +396,114 @@ public class ClubService {
 
         user.setUserStatus(lock ? "INACTIVE" : "ACTIVE");
         userRepository.save(user);
+    }
+
+    /**
+     * Trao quyền xóa câu lạc bộ cho người dùng khác (Chỉ người tạo CLB mới được thực hiện).
+     */
+    @Transactional
+    public Club grantDeletionPermission(Integer clubId, Integer targetUserId, Integer requesterUserId) {
+        Club club = clubRepository.findById(clubId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy Câu lạc bộ!"));
+
+        if (club.getCreatedBy() == null || !club.getCreatedBy().getUserId().equals(requesterUserId)) {
+            throw new SecurityException("Chỉ người tạo câu lạc bộ mới có quyền trao quyền xóa câu lạc bộ!");
+        }
+
+        User targetUser = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng được trao quyền!"));
+
+        if (club.getDeletionPermittedUsers() == null) {
+            club.setDeletionPermittedUsers(new java.util.HashSet<>());
+        }
+        club.getDeletionPermittedUsers().add(targetUser);
+        return clubRepository.save(club);
+    }
+
+    /**
+     * Thu hồi quyền xóa câu lạc bộ.
+     * Nếu truyền targetUserId: Thu hồi đích danh người dùng đó.
+     * Nếu để trống targetUserId: Thu hồi toàn bộ những người đã được trao quyền.
+     */
+    @Transactional
+    public Club revokeDeletionPermission(Integer clubId, Integer targetUserId, Integer requesterUserId) {
+        Club club = clubRepository.findById(clubId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy Câu lạc bộ!"));
+
+        if (club.getCreatedBy() == null || !club.getCreatedBy().getUserId().equals(requesterUserId)) {
+            throw new SecurityException("Chỉ người tạo câu lạc bộ mới có quyền thu hồi quyền xóa câu lạc bộ!");
+        }
+
+        if (club.getDeletionPermittedUsers() != null) {
+            if (targetUserId != null) {
+                User targetUser = userRepository.findById(targetUserId)
+                        .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng bị thu hồi quyền!"));
+                club.getDeletionPermittedUsers().remove(targetUser);
+            } else {
+                club.getDeletionPermittedUsers().clear();
+            }
+        }
+        return clubRepository.save(club);
+    }
+
+    /**
+     * Xóa câu lạc bộ theo ID. Người tạo ra (createdBy) hoặc những người được trao quyền xóa (deletionPermittedUsers) mới có quyền xóa.
+     */
+    @Transactional
+    public void deleteClub(Integer clubId, Integer requesterUserId) {
+        Club club = clubRepository.findById(clubId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy Câu lạc bộ!"));
+
+        boolean isCreator = club.getCreatedBy() != null && club.getCreatedBy().getUserId().equals(requesterUserId);
+        boolean isDelegated = club.getDeletionPermittedUsers() != null &&
+                club.getDeletionPermittedUsers().stream().anyMatch(u -> u.getUserId().equals(requesterUserId));
+
+        if (!isCreator && !isDelegated) {
+            throw new SecurityException("Bạn không có quyền xóa câu lạc bộ này! Chỉ người tạo hoặc những người được trao quyền xóa mới có thể xóa.");
+        }
+
+        // 1. Hủy liên kết giữa Department (head) và ClubMember (department) để tránh lỗi vi phạm khóa ngoại vòng
+        List<Department> departments = departmentRepository.findByClubId(clubId);
+        for (Department dept : departments) {
+            dept.setHead(null);
+        }
+        departmentRepository.saveAll(departments);
+
+        List<ClubMember> members = clubMemberRepository.findByClubId(clubId);
+        for (ClubMember member : members) {
+            member.setDepartment(null);
+        }
+        clubMemberRepository.saveAll(members);
+
+        // 2. Dọn dẹp tất cả dữ liệu con thuộc CLB
+        List<ClubDocument> documents = clubDocumentRepository.findByClubId(clubId);
+        for (ClubDocument doc : documents) {
+            documentRevisionRepository.deleteByClubDocumentId(doc.getId());
+        }
+        clubDocumentRepository.deleteAll(documents);
+
+        List<ClubEvent> events = clubEventRepository.findByClubId(clubId);
+        for (ClubEvent event : events) {
+            eventGoogleSyncRepository.findByClubEventId(event.getId())
+                    .ifPresent(eventGoogleSyncRepository::delete);
+        }
+        clubEventRepository.deleteAll(events);
+
+        clubTaskRepository.deleteByClubId(clubId);
+        chatMessageRepository.deleteByClubId(clubId);
+        clubSubscriptionRepository.deleteByClubId(clubId);
+        paymentOrderRepository.deleteByClubId(clubId);
+        googleFormRepository.deleteByClubId(clubId);
+        googleSheetRepository.deleteByClubId(clubId);
+        clubGooglePermissionRepository.deleteByClubId(clubId);
+        clubTrelloConfigRepository.findByClubId(clubId)
+                .ifPresent(clubTrelloConfigRepository::delete);
+
+        departmentRepository.deleteAll(departments);
+        clubMemberRepository.deleteAll(members);
+
+        // 3. Xóa chính câu lạc bộ
+        clubRepository.delete(club);
     }
 }
 

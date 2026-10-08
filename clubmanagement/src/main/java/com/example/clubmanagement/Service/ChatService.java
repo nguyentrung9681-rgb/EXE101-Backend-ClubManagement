@@ -362,4 +362,46 @@ public class ChatService {
                 .attachments(attachmentDtos)
                 .build();
     }
+
+    /**
+     * Lấy danh sách các emoji phổ biến theo từng danh mục hỗ trợ cho trình chọn emoji (Emoji Picker).
+     */
+    public List<EmojiCategoryResponse> getAvailableEmojis() {
+        List<EmojiCategoryResponse> categories = new ArrayList<>();
+
+        categories.add(EmojiCategoryResponse.builder()
+                .category("Biểu cảm & Gương mặt (Smileys & Emotion)")
+                .emojis(List.of("😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇",
+                                "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚",
+                                "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🤩",
+                                "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣",
+                                "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬",
+                                "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "😥", "😓", "🤗",
+                                "🤔", "🤭", "🤫", "🤥", "😶", "😐", "😑", "😬", "🙄", "😯",
+                                "😦", "😧", "😮", "😲", "🥱", "😴", "🤤", "😪", "😵", "🤐"))
+                .build());
+
+        categories.add(EmojiCategoryResponse.builder()
+                .category("Cử chỉ & Bàn tay (Gestures & Hands)")
+                .emojis(List.of("👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞",
+                                "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍",
+                                "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝",
+                                "🙏", "✍️", "💅", "🤳", "💪", "🦾", "🦿"))
+                .build());
+
+        categories.add(EmojiCategoryResponse.builder()
+                .category("Trái tim & Cảm xúc (Hearts & Reactions)")
+                .emojis(List.of("❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔",
+                                "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "🔥",
+                                "✨", "🌟", "⭐", "💥", "💯", "💢", "💬", "💭"))
+                .build());
+
+        categories.add(EmojiCategoryResponse.builder()
+                .category("Chúc mừng & Hoạt động (Celebration & Activities)")
+                .emojis(List.of("🎉", "🎊", "🎈", "🎂", "🎁", "🏆", "🥇", "🥈", "🥉", "🏅",
+                                "🎗️", "🎯", "🚀", "📢", "📣", "🔔", "💡", "📌", "📌", "👑"))
+                .build());
+
+        return categories;
+    }
 }

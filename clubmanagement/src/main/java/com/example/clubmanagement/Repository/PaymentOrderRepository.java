@@ -17,4 +17,6 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Inte
 
     @Query("SELECT p FROM PaymentOrder p WHERE p.user.userId = :userId ORDER BY p.createdAt DESC")
     List<PaymentOrder> findByUserIdOrderByCreatedAtDesc(@Param("userId") Integer userId);
+
+    void deleteByClubId(Integer clubId);
 }

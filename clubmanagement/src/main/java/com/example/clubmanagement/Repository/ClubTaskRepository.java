@@ -14,4 +14,5 @@ public interface ClubTaskRepository extends JpaRepository<ClubTask, Integer> {
     List<ClubTask> findByClubIdAndIsFinanceRelatedTrue(Integer clubId);
     List<ClubTask> findByEventId(Integer eventId);
     Optional<ClubTask> findByTrelloCardId(String trelloCardId);
+    void deleteByClubId(Integer clubId);
 }

@@ -221,6 +221,37 @@ public class ClubController {
     }
 
     /**
+     * Trao quyền chủ nhiệm cho một thành viên khác.
+     * Người chủ nhiệm hiện tại sẽ chuyển thành vai trò MEMBER.
+     * PUT /api/clubs/{clubId}/transfer-president?targetMemberId={targetMemberId}&requesterUserId={requesterUserId}
+     */
+    @PutMapping("/{clubId}/transfer-president")
+    public ResponseEntity<?> transferPresident(
+            @PathVariable Integer clubId,
+            @RequestParam Integer targetMemberId,
+            @RequestParam(required = false) Integer requesterUserId) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(requesterUserId);
+            ClubMember newPresident = clubService.transferPresident(clubId, targetMemberId, effectiveUserId);
+
+            String newPresidentName = (newPresident != null && newPresident.getUser() != null && newPresident.getUser().getFullName() != null)
+                    ? newPresident.getUser().getFullName()
+                    : ("ID " + targetMemberId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Đã trao quyền chủ nhiệm cho thành viên " + newPresidentName + " thành công!");
+            response.put("newPresident", mapToClubMemberResponse(newPresident));
+            return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * Tạm khóa/mở khóa thành viên câu lạc bộ (Chủ nhiệm chuyển trạng thái User thành INACTIVE).
      * PUT /api/clubs/{clubId}/members/{memberId}/lock?requesterUserId={id}&lock={true|false}
      */
@@ -244,8 +275,135 @@ public class ClubController {
         }
     }
 
+    /**
+     * Xóa câu lạc bộ theo ID (Chỉ người tạo câu lạc bộ mới có quyền xóa).
+     * DELETE /api/clubs/{id}?userId={userId}
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteClub(
+            @PathVariable Integer id,
+            @RequestParam(required = false) Integer userId) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            clubService.deleteClub(id, effectiveUserId);
+            return ResponseEntity.ok(Map.of("message", "Xóa câu lạc bộ thành công!"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Trao quyền xóa câu lạc bộ cho một người dùng khác (Chỉ người tạo câu lạc bộ mới được phép làm).
+     * POST /api/clubs/{id}/grant-deletion-permission?targetUserId={targetUserId}&userId={userId}
+     */
+    /**
+     * Trao quyền xóa câu lạc bộ cho một người dùng khác (Chỉ người tạo câu lạc bộ mới được phép làm).
+     * POST /api/clubs/{id}/grant-deletion-permission?targetUserId={targetUserId}&userId={userId}
+     */
+    @PostMapping("/{id}/grant-deletion-permission")
+    public ResponseEntity<?> grantDeletionPermission(
+            @PathVariable Integer id,
+            @RequestParam Integer targetUserId,
+            @RequestParam(required = false) Integer userId) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            Club updated = clubService.grantDeletionPermission(id, targetUserId, effectiveUserId);
+            ClubResponse responseDto = mapToClubResponse(updated);
+
+            String targetName = "ID " + targetUserId;
+            if (responseDto.getDeletionPermittedUsers() != null) {
+                targetName = responseDto.getDeletionPermittedUsers().stream()
+                        .filter(u -> u.getUserId().equals(targetUserId))
+                        .map(ClubResponse.UserSummary::getFullName)
+                        .findFirst().orElse("ID " + targetUserId);
+            }
+            String message = "Bạn đã trao quyền xóa câu lạc bộ cho " + targetName + " thành công!";
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", message);
+            response.put("club", responseDto);
+            return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Thu hồi quyền xóa câu lạc bộ.
+     * POST /api/clubs/{id}/revoke-deletion-permission?targetUserId={targetUserId}&userId={userId}
+     * - Nếu truyền targetUserId: Thu hồi đích danh 1 người.
+     * - Nếu để trống targetUserId: Thu hồi tất cả những người đã được trao quyền.
+     */
+    @PostMapping("/{id}/revoke-deletion-permission")
+    public ResponseEntity<?> revokeDeletionPermission(
+            @PathVariable Integer id,
+            @RequestParam(required = false) Integer targetUserId,
+            @RequestParam(required = false) Integer userId) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            Club currentClub = clubService.getClubById(id);
+
+            String targetName = "tất cả người dùng được trao quyền";
+            if (targetUserId != null && currentClub.getDeletionPermittedUsers() != null) {
+                targetName = currentClub.getDeletionPermittedUsers().stream()
+                        .filter(u -> u.getUserId().equals(targetUserId))
+                        .map(u -> u.getFullName() != null ? u.getFullName() : ("ID " + targetUserId))
+                        .findFirst().orElse("ID " + targetUserId);
+            }
+
+            Club updated = clubService.revokeDeletionPermission(id, targetUserId, effectiveUserId);
+            ClubResponse responseDto = mapToClubResponse(updated);
+            String message = (targetUserId != null)
+                    ? "Bạn đã thu hồi quyền xóa câu lạc bộ từ " + targetName + " thành công!"
+                    : "Bạn đã thu hồi quyền xóa câu lạc bộ từ tất cả những người được trao quyền!";
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", message);
+            response.put("club", responseDto);
+            return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Lấy danh sách những người dùng được trao quyền xóa của một câu lạc bộ.
+     * GET /api/clubs/{id}/deletion-permissions
+     */
+    @GetMapping("/{id}/deletion-permissions")
+    public ResponseEntity<?> getDeletionPermittedUsers(@PathVariable Integer id) {
+        try {
+            Club club = clubService.getClubById(id);
+            ClubResponse responseDto = mapToClubResponse(club);
+            List<ClubResponse.UserSummary> permittedUsers = (responseDto != null && responseDto.getDeletionPermittedUsers() != null)
+                    ? responseDto.getDeletionPermittedUsers()
+                    : List.of();
+            return ResponseEntity.ok(permittedUsers);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     private ClubResponse mapToClubResponse(Club club) {
         if (club == null) return null;
+
+        List<ClubResponse.UserSummary> permittedUsers = null;
+        if (club.getDeletionPermittedUsers() != null && !club.getDeletionPermittedUsers().isEmpty()) {
+            permittedUsers = club.getDeletionPermittedUsers().stream()
+                    .map(u -> ClubResponse.UserSummary.builder()
+                            .userId(u.getUserId())
+                            .fullName(u.getFullName())
+                            .email(u.getEmail())
+                            .build())
+                    .collect(Collectors.toList());
+        }
+
         return ClubResponse.builder()
                 .id(club.getId())
                 .name(club.getName())
@@ -255,6 +413,7 @@ public class ClubController {
                 .visibility(club.getVisibility() != null ? club.getVisibility().name() : ClubVisibility.PUBLIC.name())
                 .createdByUserId(club.getCreatedBy() != null ? club.getCreatedBy().getUserId() : null)
                 .createdByName(club.getCreatedBy() != null ? club.getCreatedBy().getFullName() : null)
+                .deletionPermittedUsers(permittedUsers)
                 .createdAt(club.getCreatedAt())
                 .updatedAt(club.getUpdatedAt())
                 .build();

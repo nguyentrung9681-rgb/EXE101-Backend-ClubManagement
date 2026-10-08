@@ -12,4 +12,5 @@ import java.util.Optional;
 public interface ClubSubscriptionRepository extends JpaRepository<ClubSubscription, Integer> {
     Optional<ClubSubscription> findFirstByClubIdAndStatusOrderByEndDateDesc(Integer clubId, SubscriptionStatus status);
     List<ClubSubscription> findByClubIdOrderByCreatedAtDesc(Integer clubId);
+    void deleteByClubId(Integer clubId);
 }

@@ -18,6 +18,7 @@ public interface ClubDocumentRepository extends JpaRepository<ClubDocument, Inte
     List<ClubDocument> findByEventId(Integer eventId);
     Optional<ClubDocument> findByGoogleDocumentId(String googleDocumentId);
     Optional<ClubDocument> findByWebhookChannelIdAndWebhookResourceId(String channelId, String resourceId);
+    void deleteByClubId(Integer clubId);
 
     @Query("SELECT d FROM ClubDocument d WHERE d.club.id = :clubId " +
            "AND (CAST(:search AS string) IS NULL OR LOWER(d.title) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) OR LOWER(d.contentSummary) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))) " +

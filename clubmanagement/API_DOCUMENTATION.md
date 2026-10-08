@@ -212,6 +212,107 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
 }
 ```
 
+#### 3.2.4. Xóa Câu Lạc Bộ theo ID
+* **URL:** `/api/clubs/{id}`
+* **Method:** `DELETE`
+* **Path Variables:**
+  * `id` (Integer): ID của câu lạc bộ cần xóa.
+* **Query Parameters:**
+  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `userId` | `Integer` | Không | ID của người dùng thực hiện xóa (Nếu không truyền, tự động lấy từ JWT Token) |
+
+* **Phân quyền:** Chỉ **người tạo ra câu lạc bộ (`createdBy`)** hoặc **người được trao quyền xóa (`deletionPermittedUser`)** mới có quyền xóa câu lạc bộ này.
+* **Response (200 OK):**
+```json
+{
+  "message": "Xóa câu lạc bộ thành công!"
+}
+```
+* **Response (403 Forbidden - Không có quyền xóa):**
+```json
+{
+  "error": "Bạn không có quyền xóa câu lạc bộ này! Chỉ người tạo hoặc người được trao quyền xóa mới có thể xóa."
+}
+```
+
+#### 3.2.5. Trao quyền xóa Câu Lạc Bộ cho người dùng khác
+* **URL:** `/api/clubs/{id}/grant-deletion-permission`
+* **Method:** `POST`
+* **Path Variables:**
+  * `id` (Integer): ID của câu lạc bộ.
+* **Query Parameters:**
+  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `targetUserId` | `Integer` | Có | ID của người dùng được trao quyền xóa CLB |
+  | `userId` | `Integer` | Không | ID của người tạo CLB (Tự động lấy từ JWT nếu để trống) |
+
+* **Phân quyền:** Chỉ **người tạo ra câu lạc bộ (`createdBy`)** mới có quyền trao quyền xóa.
+* **Response (200 OK):**
+```json
+{
+  "message": "Bạn đã trao quyền xóa câu lạc bộ cho Nguyễn Văn B thành công!",
+  "club": {
+    "id": 10,
+    "name": "CLB Bóng Đá",
+    "createdByUserId": 1,
+    "deletionPermittedUsers": [
+      {
+        "userId": 2,
+        "fullName": "Nguyễn Văn B",
+        "email": "nguyenvanb@example.com"
+      }
+    ]
+  }
+}
+```
+
+#### 3.2.6. Thu hồi quyền xóa Câu Lạc Bộ
+* **URL:** `/api/clubs/{id}/revoke-deletion-permission`
+* **Method:** `POST`
+* **Path Variables:**
+  * `id` (Integer): ID của câu lạc bộ.
+* **Query Parameters:**
+  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `targetUserId` | `Integer` | Không | ID của người dùng bị thu hồi quyền xóa (Nếu để trống, thu hồi tất cả) |
+  | `userId` | `Integer` | Không | ID của người tạo CLB (Tự động lấy từ JWT nếu để trống) |
+
+* **Phân quyền:** Chỉ **người tạo ra câu lạc bộ (`createdBy`)** mới có quyền thu hồi quyền xóa.
+* **Response (200 OK):**
+```json
+{
+  "message": "Bạn đã thu hồi quyền xóa câu lạc bộ từ Nguyễn Văn B thành công!",
+  "club": {
+    "id": 10,
+    "name": "CLB Bóng Đá",
+    "createdByUserId": 1,
+    "deletionPermittedUsers": []
+  }
+}
+```
+
+#### 3.2.7. Lấy danh sách người được trao quyền xóa Câu Lạc Bộ
+* **URL:** `/api/clubs/{id}/deletion-permissions`
+* **Method:** `GET`
+* **Path Variables:**
+  * `id` (Integer): ID của câu lạc bộ.
+* **Response (200 OK):**
+```json
+[
+  {
+    "userId": 2,
+    "fullName": "Nguyễn Văn B",
+    "email": "nguyenvanb@example.com"
+  },
+  {
+    "userId": 3,
+    "fullName": "Trần Văn C",
+    "email": "tranvanc@example.com"
+  }
+]
+```
+
 ---
 
 ### 3.3. QUẢN LÝ SỰ KIỆN (EVENTS)

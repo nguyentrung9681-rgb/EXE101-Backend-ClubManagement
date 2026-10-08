@@ -190,15 +190,16 @@ public class GoogleFormsController {
     }
 
     @Operation(summary = "Xóa Google Form",
-               description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền xóa.")
+               description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền xóa. Tùy chọn deleteLinkedSheet (true/false) để xóa luôn file Google Sheet phản hồi liên kết.")
     @DeleteMapping("/{formId}")
     public ResponseEntity<?> deleteForm(
             @Parameter(description = "ID người dùng (tự động lấy từ token nếu trống)") @RequestParam(required = false) Integer userId,
             @Parameter(description = "ID CLB") @RequestParam Integer clubId,
-            @PathVariable String formId) {
+            @PathVariable String formId,
+            @Parameter(description = "Xóa luôn Google Sheet phản hồi liên kết hay không (mặc định: false)") @RequestParam(required = false, defaultValue = "false") Boolean deleteLinkedSheet) {
         try {
             Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
-            googleFormsService.deleteForm(effectiveUserId, clubId, formId);
+            googleFormsService.deleteForm(effectiveUserId, clubId, formId, deleteLinkedSheet);
             return ResponseEntity.ok(Map.of("message", "Xóa Google Form thành công!"));
         } catch (SecurityException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));

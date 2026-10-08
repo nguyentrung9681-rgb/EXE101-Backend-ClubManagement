@@ -56,4 +56,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     // 7. Lấy danh sách tin nhắn đã xóa mềm quá 30 ngày để dọn dẹp vĩnh viễn
     @Query("SELECT m FROM ChatMessage m WHERE m.isDeleted = true AND m.updatedAt < :cutoffDate")
     List<ChatMessage> findSoftDeletedMessagesToDelete(@Param("cutoffDate") LocalDateTime cutoffDate, Pageable pageable);
+
+    void deleteByClubId(Integer clubId);
+    void deleteByDepartmentId(Integer departmentId);
 }
