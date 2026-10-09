@@ -124,6 +124,13 @@
 			<artifactId>payos-java</artifactId>
 			<version>1.0.2</version>
 		</dependency>
+
+		<!-- Apache POI for Excel export -->
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>5.2.5</version>
+		</dependency>
 	</dependencies>
 
 	<build>
