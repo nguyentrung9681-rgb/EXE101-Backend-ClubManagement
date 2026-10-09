@@ -110,6 +110,42 @@ public class EmailService {
         log.warn("Chưa cấu hình MAILJET_API_KEY, BREVO_API_KEY, RESEND_API_KEY hoặc SPRING_MAIL_USERNAME. Email thực tế chưa gửi đi nhưng mã OTP đã được in ở Log trên.");
     }
 
+    @Async
+    public void sendEmail(String toEmail, String subject, String content) {
+        log.info("\n==================================================\n[EMAIL NOTIFICATION]\nEmail nhận: {}\nTiêu đề: {}\nNội dung: {}\n==================================================", toEmail, subject, content);
+
+        String htmlContent = """
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #ffffff;">
+                <h2 style="color: #4F46E5; text-align: center;">Hệ thống Quản lý CLB S-Club</h2>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                <h3 style="color: #333;">%s</h3>
+                <p style="font-size: 14px; color: #555; line-height: 1.6;">%s</p>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                <p style="font-size: 12px; color: #999; text-align: center;">Email này được gửi tự động từ hệ thống S-Club.</p>
+            </div>
+            """.formatted(subject, content);
+
+        if (mailjetApiKey != null && !mailjetApiKey.isBlank() && mailjetSecretKey != null && !mailjetSecretKey.isBlank()) {
+            sendViaMailjetApi(toEmail, "Thành viên", subject, htmlContent);
+            return;
+        }
+
+        if (brevoApiKey != null && !brevoApiKey.isBlank()) {
+            sendViaBrevoApi(toEmail, subject, htmlContent);
+            return;
+        }
+
+        if (resendApiKey != null && !resendApiKey.isBlank()) {
+            sendViaResendApi(toEmail, subject, htmlContent);
+            return;
+        }
+
+        if (mailSender != null && mailUsername != null && !mailUsername.isBlank()) {
+            sendViaSmtp(toEmail, subject, htmlContent);
+            return;
+        }
+    }
+
     private void sendViaMailjetApi(String toEmail, String recipientName, String subject, String htmlContent) {
         try {
             log.info("Đang tiến hành gửi email tới {} qua Mailjet HTTP API (Port 443 HTTPS)...", toEmail);
