@@ -65,6 +65,23 @@ public class FinanceController {
         return ResponseEntity.ok(financeService.getTransactions(clubId, search, type, category, status, PageRequest.of(page, size)));
     }
 
+    @GetMapping("/transactions/{id}")
+    @Operation(summary = "Lấy chi tiết một giao dịch")
+    public ResponseEntity<TransactionResponse> getTransactionById(
+            @PathVariable Integer clubId,
+            @PathVariable Integer id) {
+        return ResponseEntity.ok(financeService.getTransactionById(id));
+    }
+
+    @PutMapping("/transactions/{id}")
+    @Operation(summary = "Chỉnh sửa cập nhật thông tin giao dịch")
+    public ResponseEntity<TransactionResponse> updateTransaction(
+            @PathVariable Integer clubId,
+            @PathVariable Integer id,
+            @RequestBody TransactionRequest request) {
+        return ResponseEntity.ok(financeService.updateTransaction(id, request));
+    }
+
     @PatchMapping("/transactions/{id}/status")
     @Operation(summary = "Duyệt / Từ chối giao dịch")
     public ResponseEntity<TransactionResponse> updateStatus(

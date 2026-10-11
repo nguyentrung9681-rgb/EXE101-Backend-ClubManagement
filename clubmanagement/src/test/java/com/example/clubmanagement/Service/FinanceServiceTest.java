@@ -164,6 +164,34 @@ class FinanceServiceTest {
     }
 
     @Test
+    @DisplayName("Test getTransactionById lấy chi tiết giao dịch")
+    void testGetTransactionById() {
+        when(txRepo.findById(100)).thenReturn(Optional.of(sampleTx));
+
+        TransactionResponse res = financeService.getTransactionById(100);
+
+        assertNotNull(res);
+        assertEquals(100, res.getId());
+        assertEquals("Thu phi gia nhap", res.getDescription());
+    }
+
+    @Test
+    @DisplayName("Test updateTransaction cập nhật nội dung giao dịch")
+    void testUpdateTransaction() {
+        when(txRepo.findById(100)).thenReturn(Optional.of(sampleTx));
+        when(txRepo.save(any())).thenReturn(sampleTx);
+
+        TransactionRequest req = new TransactionRequest();
+        req.setDescription("Mô tả mới");
+        req.setAmount(BigDecimal.valueOf(700000));
+
+        TransactionResponse res = financeService.updateTransaction(100, req);
+
+        assertNotNull(res);
+        verify(txRepo, times(1)).save(sampleTx);
+    }
+
+    @Test
     @DisplayName("Test updateStatus cập nhật trạng thái giao dịch")
     void testUpdateStatus() {
         when(txRepo.findById(100)).thenReturn(Optional.of(sampleTx));

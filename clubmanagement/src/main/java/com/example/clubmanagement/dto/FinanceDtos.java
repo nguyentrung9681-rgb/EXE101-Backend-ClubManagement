@@ -1,5 +1,6 @@
 package com.example.clubmanagement.dto;
 
+import com.example.clubmanagement.Enum.ContributionStatus;
 import com.example.clubmanagement.Enum.TransactionCategory;
 import com.example.clubmanagement.Enum.TransactionStatus;
 import com.example.clubmanagement.Enum.TransactionType;
@@ -65,5 +66,36 @@ public class FinanceDtos {
         private LocalDateTime deadline;
         private String bankAccountInfo;
         private String description;
+    }
+
+    @Data @Builder
+    public static class FundCampaignResponse {
+        private Integer id;
+        private Integer clubId;
+        private String title;
+        private BigDecimal amountPerMember;
+        private LocalDateTime deadline;
+        private String bankAccountInfo;
+        private String description;
+        private String createdByName;
+        private LocalDateTime createdAt;
+        private Integer totalMembers;
+        private Integer paidMembers;
+        private BigDecimal totalCollected;
+        private BigDecimal targetAmount;
+    }
+
+    @Data @Builder
+    public static class FundContributionResponse {
+        private Integer id;
+        private Integer campaignId;
+        private Integer userId;
+        private String fullName;
+        private String email;
+        private String avatarUrl;
+        private ContributionStatus status;
+        private String proofImageUrl;
+        private LocalDateTime paidAt;
+        private LocalDateTime updatedAt;
     }
 }

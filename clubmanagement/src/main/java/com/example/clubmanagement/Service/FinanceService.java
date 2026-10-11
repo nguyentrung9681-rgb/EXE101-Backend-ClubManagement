@@ -144,6 +144,25 @@ public class FinanceService {
         return txRepo.searchTransactions(clubId, search, type, category, status, pageable).map(this::mapToDto);
     }
 
+    @Transactional(readOnly = true)
+    public TransactionResponse getTransactionById(Integer txId) {
+        FinancialTransaction tx = txRepo.findById(txId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+        return mapToDto(tx);
+    }
+
+    @Transactional
+    public TransactionResponse updateTransaction(Integer txId, TransactionRequest req) {
+        FinancialTransaction tx = txRepo.findById(txId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+        if (req.getDescription() != null) tx.setDescription(req.getDescription());
+        if (req.getType() != null) tx.setType(req.getType());
+        if (req.getAmount() != null) tx.setAmount(req.getAmount());
+        if (req.getCategory() != null) tx.setCategory(req.getCategory());
+        if (req.getStatus() != null) tx.setStatus(req.getStatus());
+        return mapToDto(txRepo.save(tx));
+    }
+
     @Transactional
     public TransactionResponse updateStatus(Integer txId, TransactionStatus status) {
         FinancialTransaction tx = txRepo.findById(txId).orElseThrow(() -> new RuntimeException("Tx not found"));

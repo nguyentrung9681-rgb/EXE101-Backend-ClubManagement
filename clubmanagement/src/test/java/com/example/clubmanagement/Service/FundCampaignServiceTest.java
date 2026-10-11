@@ -4,6 +4,8 @@ import com.example.clubmanagement.Entity.*;
 import com.example.clubmanagement.Enum.ContributionStatus;
 import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.dto.FinanceDtos.CreateCampaignRequest;
+import com.example.clubmanagement.dto.FinanceDtos.FundCampaignResponse;
+import com.example.clubmanagement.dto.FinanceDtos.FundContributionResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -89,13 +91,57 @@ class FundCampaignServiceTest {
         when(userRepo.findById(10)).thenReturn(Optional.of(sampleUser));
         when(campaignRepo.save(any())).thenReturn(sampleCampaign);
         when(clubMemberRepo.findByClubId(1)).thenReturn(List.of(member));
+        when(contributionRepo.findByCampaignId(50)).thenReturn(List.of(sampleContribution));
 
-        FundCampaign result = campaignService.createCampaign(1, 10, req);
+        FundCampaignResponse result = campaignService.createCampaign(1, 10, req);
 
         assertNotNull(result);
         assertEquals(50, result.getId());
         verify(contributionRepo, times(1)).save(any());
         verify(emailService, times(1)).sendEmail(eq("tranvanb@example.com"), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Test getCampaignsByClub lấy danh sách đợt thu quỹ của CLB")
+    void testGetCampaignsByClub() {
+        when(campaignRepo.findByClubIdOrderByCreatedAtDesc(1))
+                .thenReturn(List.of(sampleCampaign));
+        when(contributionRepo.findByCampaignId(50))
+                .thenReturn(List.of(sampleContribution));
+
+        List<FundCampaignResponse> list = campaignService.getCampaignsByClub(1);
+
+        assertNotNull(list);
+        assertEquals(1, list.size());
+        assertEquals("Quy CLB Thang 10", list.get(0).getTitle());
+        assertEquals(1, list.get(0).getTotalMembers());
+    }
+
+    @Test
+    @DisplayName("Test getCampaignById lấy chi tiết đợt thu quỹ")
+    void testGetCampaignById() {
+        when(campaignRepo.findById(50)).thenReturn(Optional.of(sampleCampaign));
+        when(contributionRepo.findByCampaignId(50)).thenReturn(List.of(sampleContribution));
+
+        FundCampaignResponse res = campaignService.getCampaignById(50);
+
+        assertNotNull(res);
+        assertEquals(50, res.getId());
+        assertEquals("Quy CLB Thang 10", res.getTitle());
+    }
+
+    @Test
+    @DisplayName("Test getContributionsByCampaign lấy danh sách đóng tiền của đợt thu quỹ")
+    void testGetContributionsByCampaign() {
+        when(contributionRepo.findByCampaignId(50)).thenReturn(List.of(sampleContribution));
+
+        List<FundContributionResponse> list = campaignService.getContributionsByCampaign(50);
+
+        assertNotNull(list);
+        assertEquals(1, list.size());
+        assertEquals(200, list.get(0).getId());
+        assertEquals("Tran Van B", list.get(0).getFullName());
+        assertEquals(ContributionStatus.UNPAID, list.get(0).getStatus());
     }
 
     @Test
