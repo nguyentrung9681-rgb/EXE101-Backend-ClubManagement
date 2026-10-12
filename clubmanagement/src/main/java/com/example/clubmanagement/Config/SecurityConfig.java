@@ -112,6 +112,7 @@ public class SecurityConfig {
                                 "/api/packages/**",
                                 "/api/payments/**"
                         ).permitAll()
+                        .requestMatchers("/ws-chat/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )

@@ -6,8 +6,11 @@ import com.example.clubmanagement.Enum.ClubMemberStatus;
 import com.example.clubmanagement.Enum.MessageType;
 import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.dto.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -21,7 +24,9 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class ChatService {
 
     private final ChatMessageRepository chatMessageRepository;
@@ -31,24 +36,9 @@ public class ChatService {
     private final DepartmentRepository departmentRepository;
     private final UserRepository userRepository;
     private final ClubMemberRepository clubMemberRepository;
+    private final SimpMessagingTemplate simpMessagingTemplate;
 
     private static final String UPLOAD_DIR = "uploads/chat/";
-
-    public ChatService(ChatMessageRepository chatMessageRepository,
-                       ChatMessageArchiveRepository chatMessageArchiveRepository,
-                       ChatAttachmentRepository chatAttachmentRepository,
-                       ClubRepository clubRepository,
-                       DepartmentRepository departmentRepository,
-                       UserRepository userRepository,
-                       ClubMemberRepository clubMemberRepository) {
-        this.chatMessageRepository = chatMessageRepository;
-        this.chatMessageArchiveRepository = chatMessageArchiveRepository;
-        this.chatAttachmentRepository = chatAttachmentRepository;
-        this.clubRepository = clubRepository;
-        this.departmentRepository = departmentRepository;
-        this.userRepository = userRepository;
-        this.clubMemberRepository = clubMemberRepository;
-    }
 
     /**
      * Tải tin nhắn của Kênh Chat PHÒNG BAN (Lazy loading Cursor Pagination)
@@ -89,7 +79,16 @@ public class ChatService {
 
         ChatMessage message = buildMessageEntity(club, department, sender, request);
         ChatMessage savedMessage = chatMessageRepository.save(message);
-        return mapToMessageResponse(savedMessage);
+        ChatMessageResponse response = mapToMessageResponse(savedMessage);
+
+        // 1. Phát realtime tin nhắn mới tới Room phòng ban
+        String deptTopic = String.format("/topic/clubs/%d/departments/%d", clubId, departmentId);
+        simpMessagingTemplate.convertAndSend(deptTopic, response);
+
+        // 2. Gửi notification chuông tới các thành viên khác trong phòng ban
+        notifyDepartmentMembers(clubId, departmentId, sender, savedMessage);
+
+        return response;
     }
 
     /**
@@ -127,7 +126,16 @@ public class ChatService {
 
         ChatMessage message = buildMessageEntity(club, null, sender, request);
         ChatMessage savedMessage = chatMessageRepository.save(message);
-        return mapToMessageResponse(savedMessage);
+        ChatMessageResponse response = mapToMessageResponse(savedMessage);
+
+        // 1. Phát realtime tin nhắn mới tới Kênh chung CLB
+        String clubTopic = String.format("/topic/clubs/%d", clubId);
+        simpMessagingTemplate.convertAndSend(clubTopic, response);
+
+        // 2. Gửi notification chuông tới các thành viên khác trong CLB
+        notifyClubMembers(clubId, sender, savedMessage);
+
+        return response;
     }
 
     /**
@@ -229,7 +237,15 @@ public class ChatService {
 
         message.setIsPinned(!Boolean.TRUE.equals(message.getIsPinned()));
         ChatMessage updated = chatMessageRepository.save(message);
-        return mapToMessageResponse(updated);
+        ChatMessageResponse response = mapToMessageResponse(updated);
+
+        // Phát event cập nhật ghim tin nhắn tới Room
+        String pinTopic = message.getDepartment() != null
+                ? String.format("/topic/clubs/%d/departments/%d", message.getClub().getId(), message.getDepartment().getId())
+                : String.format("/topic/clubs/%d", message.getClub().getId());
+        simpMessagingTemplate.convertAndSend(pinTopic, response);
+
+        return response;
     }
 
     /**
@@ -259,6 +275,89 @@ public class ChatService {
         message.setIsDeleted(true);
         message.setUpdatedAt(LocalDateTime.now());
         chatMessageRepository.save(message);
+
+        // Phát event xóa tin nhắn tới Room
+        String deleteTopic = message.getDepartment() != null
+                ? String.format("/topic/clubs/%d/departments/%d", message.getClub().getId(), message.getDepartment().getId())
+                : String.format("/topic/clubs/%d", message.getClub().getId());
+        NotificationDto deleteEvent = NotificationDto.builder()
+                .type("MESSAGE_DELETED")
+                .clubId(message.getClub().getId())
+                .departmentId(message.getDepartment() != null ? message.getDepartment().getId() : null)
+                .messageId(messageId)
+                .build();
+        simpMessagingTemplate.convertAndSend(deleteTopic, deleteEvent);
+    }
+
+    private void notifyDepartmentMembers(Integer clubId, Integer departmentId, User sender, ChatMessage message) {
+        try {
+            List<ClubMember> members = clubMemberRepository.findByDepartmentId(departmentId);
+            for (ClubMember m : members) {
+                if (m.getStatus() == ClubMemberStatus.ACTIVE
+                        && m.getUser() != null
+                        && !m.getUser().getUserId().equals(sender.getUserId())) {
+                    NotificationDto notification = NotificationDto.builder()
+                            .type("NEW_CHAT_MESSAGE")
+                            .title("Tin nhắn mới từ " + sender.getFullName())
+                            .snippet(message.getContent() != null ? message.getContent() : "[Tệp đính kèm]")
+                            .clubId(clubId)
+                            .departmentId(departmentId)
+                            .messageId(message.getId())
+                            .senderId(sender.getUserId())
+                            .senderName(sender.getFullName())
+                            .senderAvatar(sender.getAvatarUrl())
+                            .createdAt(message.getCreatedAt())
+                            .build();
+
+                    simpMessagingTemplate.convertAndSendToUser(
+                            m.getUser().getUsername(),
+                            "/queue/notifications",
+                            notification
+                    );
+                    simpMessagingTemplate.convertAndSend(
+                            "/topic/users/" + m.getUser().getUserId() + "/notifications",
+                            notification
+                    );
+                }
+            }
+        } catch (Exception e) {
+            log.error("Lỗi khi gửi thông báo tin nhắn phòng ban: {}", e.getMessage());
+        }
+    }
+
+    private void notifyClubMembers(Integer clubId, User sender, ChatMessage message) {
+        try {
+            List<ClubMember> members = clubMemberRepository.findByClubId(clubId);
+            for (ClubMember m : members) {
+                if (m.getStatus() == ClubMemberStatus.ACTIVE
+                        && m.getUser() != null
+                        && !m.getUser().getUserId().equals(sender.getUserId())) {
+                    NotificationDto notification = NotificationDto.builder()
+                            .type("NEW_CHAT_MESSAGE")
+                            .title(message.getClub().getName() + " - " + sender.getFullName())
+                            .snippet(message.getContent() != null ? message.getContent() : "[Tệp đính kèm]")
+                            .clubId(clubId)
+                            .messageId(message.getId())
+                            .senderId(sender.getUserId())
+                            .senderName(sender.getFullName())
+                            .senderAvatar(sender.getAvatarUrl())
+                            .createdAt(message.getCreatedAt())
+                            .build();
+
+                    simpMessagingTemplate.convertAndSendToUser(
+                            m.getUser().getUsername(),
+                            "/queue/notifications",
+                            notification
+                    );
+                    simpMessagingTemplate.convertAndSend(
+                            "/topic/users/" + m.getUser().getUserId() + "/notifications",
+                            notification
+                    );
+                }
+            }
+        } catch (Exception e) {
+            log.error("Lỗi khi gửi thông báo tin nhắn CLB: {}", e.getMessage());
+        }
     }
 
     // --- Helper Validation & Mapping Methods ---
