@@ -191,7 +191,10 @@ public class ClubTaskController {
 
             return ResponseEntity.ok(Map.of("message", "Liên kết board Trello thành công!"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            String errorMessage = (e.getMessage() != null && !e.getMessage().trim().isEmpty())
+                    ? e.getMessage()
+                    : e.getClass().getSimpleName();
+            return ResponseEntity.badRequest().body(Map.of("error", errorMessage));
         }
     }
 

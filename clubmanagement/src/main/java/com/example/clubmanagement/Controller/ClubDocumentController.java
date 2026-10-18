@@ -72,22 +72,39 @@ public class ClubDocumentController {
     @PostMapping
     public ResponseEntity<?> createDocument(
             @RequestParam(required = false) Integer userId,
-            @RequestParam Integer clubId,
+            @RequestParam(required = false) Integer clubId,
             @RequestParam(required = false) Integer eventId,
-            @RequestParam String title,
+            @RequestParam(required = false) String title,
             @Parameter(description = "Danh mục lọc trên web", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY"}))
             @RequestParam(required = false) String category,
             @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"MEETING_MINUTES", "EVENT_PLAN", "REPORT", "FINANCE", "OTHER"}))
-            @RequestParam String type
+            @RequestParam(required = false) String type,
+            @RequestBody(required = false) ClubDocumentRequest body
     ) {
         try {
             Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            Integer finalClubId = (body != null && body.getClubId() != null) ? body.getClubId() : clubId;
+            Integer finalEventId = (body != null && body.getEventId() != null) ? body.getEventId() : eventId;
+            String finalTitle = (body != null && body.getTitle() != null) ? body.getTitle() : title;
+            String finalCategory = (body != null && body.getCategory() != null) ? body.getCategory() : category;
+            String finalType = (body != null && body.getDocumentType() != null) ? body.getDocumentType() : type;
+
+            if (finalClubId == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "clubId là bắt buộc!"));
+            }
+            if (finalTitle == null || finalTitle.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "title là bắt buộc!"));
+            }
+            if (finalType == null || finalType.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "type là bắt buộc!"));
+            }
+
             ClubDocumentRequest request = ClubDocumentRequest.builder()
-                    .clubId(clubId)
-                    .eventId(eventId)
-                    .title(title)
-                    .category(category)
-                    .documentType(type)
+                    .clubId(finalClubId)
+                    .eventId(finalEventId)
+                    .title(finalTitle)
+                    .category(finalCategory)
+                    .documentType(finalType)
                     .build();
             ClubDocument doc = clubDocumentService.createDocument(request, effectiveUserId);
             return ResponseEntity.ok(mapToResponse(doc));
