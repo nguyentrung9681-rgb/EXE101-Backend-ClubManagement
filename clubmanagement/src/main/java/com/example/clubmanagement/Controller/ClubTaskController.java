@@ -13,11 +13,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.HtmlUtils;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api")
@@ -27,6 +30,7 @@ public class ClubTaskController {
     @Autowired private ClubTaskService taskService;
     @Autowired private ClubTrelloConfigRepository trelloConfigRepository;
     @Autowired private ClubRepository clubRepository;
+    @Autowired(required = false) private SimpMessagingTemplate messagingTemplate;
 
     @Value("${trello.redirect-uri:${app.frontend.trello-url:https://exe-ebon.vercel.app/api/trello/callback}}")
     private String frontendTrelloUrl;
@@ -41,12 +45,49 @@ public class ClubTaskController {
         }
     }
 
+    /**
+     * Lấy trạng thái kết nối Trello của CLB (phục vụ Frontend kiểm tra và ẩn/hiện banner cảnh báo).
+     * GET /api/trello/status?clubId=...
+     */
+    @GetMapping("/trello/status")
+    public ResponseEntity<?> getTrelloStatus(@RequestParam Integer clubId) {
+        try {
+            Optional<ClubTrelloConfig> configOpt = trelloConfigRepository.findByClubId(clubId);
+            if (configOpt.isEmpty()) {
+                return ResponseEntity.ok(Map.of(
+                        "connected", false,
+                        "boardLinked", false,
+                        "status", "NOT_CONNECTED",
+                        "clubId", clubId
+                ));
+            }
+            ClubTrelloConfig config = configOpt.get();
+            boolean hasToken = config.getTrelloToken() != null && !config.getTrelloToken().trim().isEmpty();
+            boolean boardLinked = config.getTrelloBoardId() != null && !config.getTrelloBoardId().trim().isEmpty();
+            String status = (!hasToken) ? "NOT_CONNECTED" : (boardLinked ? "CONNECTED" : "TOKEN_SAVED");
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("connected", hasToken);
+            response.put("boardLinked", boardLinked);
+            response.put("status", status);
+            response.put("clubId", clubId);
+            response.put("boardId", config.getTrelloBoardId());
+            response.put("todoListId", config.getTodoListId());
+            response.put("doingListId", config.getDoingListId());
+            response.put("doneListId", config.getDoneListId());
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/trello/callback")
     @ResponseBody
     public String trelloCallback(@RequestParam Integer clubId) {
         Integer safeClubId = clubId;
         String safeFrontendUrl = HtmlUtils.htmlEscape(frontendTrelloUrl);
-        // Trả trang HTML an toàn chống Reflected XSS
+        // Trả trang HTML an toàn chống Reflected XSS và gửi postMessage thông báo tab cha
         return "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px;'>" +
                 "<h2>Kết nối Trello thành công!</h2>" +
                 "<p>Hệ thống đang chuyển hướng về ứng dụng...</p>" +
@@ -56,6 +97,13 @@ public class ClubTaskController {
                 "  var token = encodeURIComponent(hash.split('token=')[1].split('&')[0]);" +
                 "  fetch('/api/trello/save-token?clubId=" + safeClubId + "&token=' + token, {method:'POST'})" +
                 "  .then(function() {" +
+                "    try {" +
+                "      if (window.opener) {" +
+                "        window.opener.postMessage({ type: 'TRELLO_CONNECTED', clubId: " + safeClubId + " }, '*');" +
+                "        setTimeout(function() { window.close(); }, 1000);" +
+                "        return;" +
+                "      }" +
+                "    } catch(e) {}" +
                 "    setTimeout(function() { window.location.href = '" + safeFrontendUrl + "?clubId=" + safeClubId + "'; }, 1500);" +
                 "  });" +
                 "} else {" +
@@ -72,9 +120,25 @@ public class ClubTaskController {
                     .orElse(ClubTrelloConfig.builder().club(club).build());
             config.setTrelloToken(token);
             trelloConfigRepository.save(config);
+
+            // Bắn realtime qua WebSocket để Frontend cập nhật ngay lập tức mà không cần Refresh
+            if (messagingTemplate != null) {
+                Map<String, Object> wsPayload = Map.of(
+                        "event", "TRELLO_CONNECTED",
+                        "clubId", clubId,
+                        "status", "TOKEN_SAVED",
+                        "connected", true,
+                        "boardLinked", config.getTrelloBoardId() != null
+                );
+                messagingTemplate.convertAndSend("/topic/clubs/" + clubId + "/trello", (Object) wsPayload);
+                messagingTemplate.convertAndSend("/topic/clubs/" + clubId, (Object) wsPayload);
+            }
+
             return ResponseEntity.ok(Map.of(
                     "clubId", clubId,
                     "status", "CONNECTED",
+                    "connected", true,
+                    "boardLinked", config.getTrelloBoardId() != null,
                     "message", "Lưu Trello Token thành công"
             ));
         } catch (Exception e) {
@@ -110,6 +174,21 @@ public class ClubTaskController {
             config.setWebhookId(webhookId);
 
             trelloConfigRepository.save(config);
+
+            // Bắn realtime qua WebSocket để Frontend nhận biết Board đã được liên kết
+            if (messagingTemplate != null) {
+                Map<String, Object> wsPayload = Map.of(
+                        "event", "TRELLO_BOARD_LINKED",
+                        "clubId", clubId,
+                        "status", "CONNECTED",
+                        "connected", true,
+                        "boardLinked", true,
+                        "boardId", boardId
+                );
+                messagingTemplate.convertAndSend("/topic/clubs/" + clubId + "/trello", (Object) wsPayload);
+                messagingTemplate.convertAndSend("/topic/clubs/" + clubId, (Object) wsPayload);
+            }
+
             return ResponseEntity.ok(Map.of("message", "Liên kết board Trello thành công!"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

@@ -14,14 +14,17 @@ import com.example.clubmanagement.dto.DocumentTypeResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Tag(name = "Club Documents", description = "Quản lý Google Docs theo CLB với phân quyền RBAC")
 @RestController
 @RequestMapping("/api/documents")
 public class ClubDocumentController {
@@ -243,6 +246,95 @@ public class ClubDocumentController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", "Lỗi xóa tài liệu: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Cập nhật thông tin tài liệu (tiêu đề, danh mục EVENT / CLUB_ACTIVITY, loại tài liệu, sự kiện).
+     * Hỗ trợ cả Query Parameters lẫn Request Body JSON.
+     * PUT /api/documents/{id}
+     */
+    @Operation(summary = "Cập nhật tài liệu (tiêu đề, chuyển đổi danh mục EVENT/CLUB_ACTIVITY, loại tài liệu)",
+               description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền chỉnh sửa tài liệu.")
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateDocument(
+            @PathVariable Integer id,
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
+            @Parameter(description = "Tiêu đề mới") @RequestParam(required = false) String title,
+            @Parameter(description = "Danh mục mới (EVENT hoặc CLUB_ACTIVITY)", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY"}))
+            @RequestParam(required = false) String category,
+            @Parameter(description = "ID sự kiện (nếu danh mục là EVENT)") @RequestParam(required = false) Integer eventId,
+            @Parameter(description = "Loại tài liệu", schema = @Schema(allowableValues = {"MEETING_MINUTES", "EVENT_PLAN", "REPORT", "FINANCE", "OTHER"}))
+            @RequestParam(required = false) String type,
+            @RequestBody(required = false) ClubDocumentRequest body
+    ) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            String finalTitle = (body != null && body.getTitle() != null) ? body.getTitle() : title;
+            String finalCategory = (body != null && body.getCategory() != null) ? body.getCategory() : category;
+            Integer finalEventId = (body != null && body.getEventId() != null) ? body.getEventId() : eventId;
+            String finalType = (body != null && body.getDocumentType() != null) ? body.getDocumentType() : type;
+
+            ClubDocument doc = clubDocumentService.updateDocument(id, effectiveUserId, finalTitle, finalCategory, finalEventId, finalType);
+            return ResponseEntity.ok(mapToResponse(doc));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Cập nhật danh mục của tài liệu (EVENT hoặc CLUB_ACTIVITY) - tương tự cấu trúc bên Google Sheet.
+     * PUT /api/documents/{id}/category
+     */
+    @Operation(summary = "Cập nhật danh mục tài liệu (chuyển đổi EVENT <-> CLUB_ACTIVITY)",
+               description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền cập nhật danh mục.")
+    @PutMapping("/{id}/category")
+    public ResponseEntity<?> updateDocumentCategory(
+            @PathVariable Integer id,
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
+            @Parameter(description = "Danh mục mới: EVENT hoặc CLUB_ACTIVITY", schema = @Schema(allowableValues = {"EVENT", "CLUB_ACTIVITY"}))
+            @RequestParam String category,
+            @Parameter(description = "ID sự kiện (nếu category là EVENT)") @RequestParam(required = false) Integer eventId
+    ) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            ClubDocument doc = clubDocumentService.updateDocumentCategory(id, effectiveUserId, category, eventId);
+            return ResponseEntity.ok(mapToResponse(doc));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Cập nhật tiêu đề tài liệu - tương tự cấu trúc bên Google Sheet.
+     * PUT /api/documents/{id}/title
+     */
+    @Operation(summary = "Cập nhật tiêu đề tài liệu",
+               description = "Chỉ PRESIDENT hoặc TREASURER mới có quyền cập nhật tiêu đề.")
+    @PutMapping("/{id}/title")
+    public ResponseEntity<?> updateDocumentTitle(
+            @PathVariable Integer id,
+            @Parameter(description = "ID người dùng (nếu để trống sẽ tự lấy từ token)") @RequestParam(required = false) Integer userId,
+            @Parameter(description = "Tiêu đề mới của tài liệu") @RequestParam String title
+    ) {
+        try {
+            Integer effectiveUserId = SecurityUtils.resolveUserId(userId);
+            ClubDocument doc = clubDocumentService.updateDocumentTitle(id, effectiveUserId, title);
+            return ResponseEntity.ok(mapToResponse(doc));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 

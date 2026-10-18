@@ -13,6 +13,8 @@ public class ClubProgressDashboardResponse {
     private long doneTasks;
     private long financeRelatedTasks;
     private long eventCriticalTasks;
+    private long eventCriticalDoneTasks;
     private double eventProgressPercentage;
+    private double overallProgressPercentage;
     private long overdueTasksCount;
 }

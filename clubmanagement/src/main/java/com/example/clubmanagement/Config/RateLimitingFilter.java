@@ -97,7 +97,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     }
 
     private boolean isExemptPath(String path) {
-        return path.startsWith("/swagger-ui") ||
+        return path.equals("/health") ||
+               path.equals("/api/health") ||
+               path.startsWith("/swagger-ui") ||
                path.startsWith("/v3/api-docs") ||
                path.endsWith(".css") ||
                path.endsWith(".js") ||

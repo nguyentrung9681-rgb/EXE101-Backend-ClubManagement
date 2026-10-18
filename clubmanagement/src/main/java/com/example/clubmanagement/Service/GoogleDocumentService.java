@@ -170,4 +170,28 @@ public class GoogleDocumentService {
                 Void.class
         );
     }
+
+    /**
+     * Cập nhật tiêu đề tài liệu trên Google Drive (sử dụng POST với X-HTTP-Method-Override: PATCH).
+     */
+    public void updateDocumentTitle(String documentId, String newTitle, GoogleAccount account) {
+        try {
+            GoogleAccount activeAccount = googleCalendarService.refreshAccessToken(account);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(activeAccount.getAccessToken());
+            headers.set("X-HTTP-Method-Override", "PATCH");
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("name", newTitle);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+            String url = "https://www.googleapis.com/drive/v3/files/" + documentId;
+
+            restTemplate.postForEntity(url, request, String.class);
+        } catch (Exception e) {
+            System.err.println("Lỗi khi cập nhật tên file Google Doc trên Drive: " + e.getMessage());
+        }
+    }
 }

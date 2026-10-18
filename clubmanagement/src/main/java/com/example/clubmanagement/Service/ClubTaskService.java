@@ -6,6 +6,7 @@ import com.example.clubmanagement.Enum.ClubMemberRole;
 import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.dto.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -20,6 +21,24 @@ public class ClubTaskService {
     @Autowired private UserRepository userRepository;
     @Autowired private ClubEventRepository eventRepository;
     @Autowired private ClubMemberRepository clubMemberRepository;
+    @Autowired(required = false) private SimpMessagingTemplate messagingTemplate;
+
+    public void broadcastTaskEvent(String eventType, Integer clubId, Object payload) {
+        if (messagingTemplate != null && clubId != null) {
+            try {
+                Map<String, Object> message = new HashMap<>();
+                message.put("event", eventType);
+                message.put("clubId", clubId);
+                message.put("timestamp", LocalDateTime.now().toString());
+                message.put("data", payload);
+
+                messagingTemplate.convertAndSend("/topic/clubs/" + clubId + "/tasks", (Object) message);
+                messagingTemplate.convertAndSend("/topic/clubs/" + clubId, (Object) message);
+            } catch (Exception e) {
+                System.err.println("Lỗi broadcast WebSocket task event: " + e.getMessage());
+            }
+        }
+    }
 
     public ClubTask createInternalTask(ClubTask task, Integer clubId) {
         Club club = clubRepository.findById(clubId).orElseThrow(() -> new RuntimeException("Club not found"));
@@ -115,7 +134,9 @@ public class ClubTaskService {
             }
         }
 
-        return mapToResponse(savedTask);
+        ClubTaskResponse response = mapToResponse(savedTask);
+        broadcastTaskEvent("TASK_CREATED", clubId, response);
+        return response;
     }
 
     public List<ClubTaskResponse> getTasks(Integer clubId, Integer userId, String filterType, Integer eventId, String department, String status) {
@@ -210,7 +231,9 @@ public class ClubTaskService {
             }
         }
 
-        return mapToResponse(savedTask);
+        ClubTaskResponse response = mapToResponse(savedTask);
+        broadcastTaskEvent("TASK_UPDATED", savedTask.getClub().getId(), response);
+        return response;
     }
 
     public void deleteTask(Integer taskId, Integer userId) {
@@ -237,6 +260,7 @@ public class ClubTaskService {
             }
         }
 
+        broadcastTaskEvent("TASK_DELETED", clubId, Map.of("taskId", taskId));
         taskRepository.delete(task);
     }
 
@@ -253,7 +277,15 @@ public class ClubTaskService {
         long critical = tasks.stream().filter(ClubTask::isEventCritical).count();
 
         long criticalDone = tasks.stream().filter(t -> t.isEventCritical() && "DONE".equalsIgnoreCase(t.getStatus())).count();
-        double progressPercent = critical == 0 ? 0.0 : ((double) criticalDone / critical) * 100.0;
+
+        double overallProgress = total == 0 ? 0.0 : Math.round(((double) done / total) * 1000.0) / 10.0;
+        double progressPercent;
+        if (critical > 0) {
+            progressPercent = Math.round(((double) criticalDone / critical) * 1000.0) / 10.0;
+        } else {
+            // Nếu không có task sự kiện quan trọng, tiến độ phản ánh tổng thể task hoàn thành
+            progressPercent = overallProgress;
+        }
 
         LocalDateTime now = LocalDateTime.now();
         long overdue = tasks.stream().filter(t -> t.getDueDate() != null && t.getDueDate().isBefore(now) && !"DONE".equalsIgnoreCase(t.getStatus())).count();
@@ -265,7 +297,9 @@ public class ClubTaskService {
                 .doneTasks(done)
                 .financeRelatedTasks(finance)
                 .eventCriticalTasks(critical)
+                .eventCriticalDoneTasks(criticalDone)
                 .eventProgressPercentage(progressPercent)
+                .overallProgressPercentage(overallProgress)
                 .overdueTasksCount(overdue)
                 .build();
     }
@@ -375,6 +409,7 @@ public class ClubTaskService {
                 else if (listId.equals(config.getDoneListId())) task.setStatus("DONE");
             }
             taskRepository.save(task);
+            broadcastTaskEvent("TASK_UPDATED_FROM_TRELLO", task.getClub().getId(), mapToResponse(task));
         }
     }
 

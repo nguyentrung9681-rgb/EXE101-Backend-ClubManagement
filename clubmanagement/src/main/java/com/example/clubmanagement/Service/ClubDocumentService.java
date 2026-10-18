@@ -354,4 +354,87 @@ public class ClubDocumentService {
         // 4. Xóa tài liệu khỏi database
         clubDocumentRepository.delete(doc);
     }
+
+    /**
+     * Cập nhật thông tin tài liệu (tiêu đề, danh mục EVENT / CLUB_ACTIVITY, loại tài liệu, sự kiện liên kết).
+     * Yêu cầu: người dùng là PRESIDENT hoặc TREASURER của CLB sở hữu tài liệu.
+     */
+    @Transactional
+    public ClubDocument updateDocument(Integer id, Integer userId, String title, String category, Integer eventId, String documentType) throws Exception {
+        ClubDocument doc = clubDocumentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy tài liệu!"));
+
+        // 1. Phân quyền: chỉ PRESIDENT hoặc TREASURER của CLB mới có quyền chỉnh sửa tài liệu
+        checkWritePermission(doc.getClub().getId(), userId);
+
+        // 2. Cập nhật tiêu đề nếu có
+        if (title != null && !title.trim().isEmpty()) {
+            String newTitle = title.trim();
+            doc.setTitle(newTitle);
+            if (doc.getGoogleDocumentId() != null && !doc.getGoogleDocumentId().trim().isEmpty()) {
+                Optional<GoogleAccount> googleAccountOpt = googleAccountRepository.findFirstByUserUserIdOrderByCreatedAtDesc(doc.getCreatedBy().getUserId());
+                googleAccountOpt.ifPresent(googleAccount -> googleDocumentService.updateDocumentTitle(doc.getGoogleDocumentId(), newTitle, googleAccount));
+            }
+        }
+
+        // 3. Cập nhật danh mục (EVENT hoặc CLUB_ACTIVITY)
+        if (category != null && !category.trim().isEmpty()) {
+            DocumentCategory newCategory = parseCategory(category);
+            if (newCategory == null) {
+                throw new IllegalArgumentException("Danh mục không hợp lệ! Vui lòng chọn EVENT hoặc CLUB_ACTIVITY.");
+            }
+            doc.setCategory(newCategory);
+
+            if (newCategory == DocumentCategory.EVENT) {
+                if (eventId != null) {
+                    ClubEvent event = clubEventRepository.findById(eventId)
+                            .orElseThrow(() -> new RuntimeException("Không tìm thấy Sự kiện!"));
+                    if (!event.getClub().getId().equals(doc.getClub().getId())) {
+                        throw new RuntimeException("Sự kiện không thuộc Câu lạc bộ này!");
+                    }
+                    doc.setEvent(event);
+                }
+            } else {
+                // Khi chuyển sang CLUB_ACTIVITY thì xóa liên kết sự kiện
+                doc.setEvent(null);
+            }
+        } else if (eventId != null) {
+            // Nếu không truyền category nhưng truyền eventId -> tự động gán category = EVENT
+            ClubEvent event = clubEventRepository.findById(eventId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy Sự kiện!"));
+            if (!event.getClub().getId().equals(doc.getClub().getId())) {
+                throw new RuntimeException("Sự kiện không thuộc Câu lạc bộ này!");
+            }
+            doc.setEvent(event);
+            doc.setCategory(DocumentCategory.EVENT);
+        }
+
+        // 4. Cập nhật loại tài liệu (documentType: MEETING_MINUTES, EVENT_PLAN, REPORT, FINANCE, OTHER) nếu có
+        if (documentType != null && !documentType.trim().isEmpty()) {
+            DocumentType newType = parseDocumentType(documentType);
+            if (newType == null) {
+                throw new IllegalArgumentException("Loại tài liệu không hợp lệ! Cho phép: MEETING_MINUTES, EVENT_PLAN, REPORT, FINANCE, OTHER.");
+            }
+            doc.setDocumentType(newType);
+        }
+
+        doc.setUpdatedAt(LocalDateTime.now());
+        return clubDocumentRepository.save(doc);
+    }
+
+    /**
+     * Cập nhật danh mục (EVENT <-> CLUB_ACTIVITY) của tài liệu.
+     */
+    @Transactional
+    public ClubDocument updateDocumentCategory(Integer id, Integer userId, String category, Integer eventId) throws Exception {
+        return updateDocument(id, userId, null, category, eventId, null);
+    }
+
+    /**
+     * Cập nhật tiêu đề tài liệu.
+     */
+    @Transactional
+    public ClubDocument updateDocumentTitle(Integer id, Integer userId, String title) throws Exception {
+        return updateDocument(id, userId, title, null, null, null);
+    }
 }
