@@ -15,7 +15,7 @@ import java.util.Optional;
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
 
     // 1. Phân trang tin mới nhất của Phòng ban (departmentId != null)
-    @Query("SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender LEFT JOIN FETCH m.attachments " +
+    @Query("SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender " +
            "WHERE m.club.id = :clubId AND m.department.id = :departmentId AND m.isDeleted = false " +
            "ORDER BY m.id DESC")
     List<ChatMessage> findRecentDepartmentMessages(@Param("clubId") Integer clubId,
@@ -23,7 +23,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
                                                     Pageable pageable);
 
     // 2. Phân trang cuộn lên của Phòng ban (id < beforeMessageId)
-    @Query("SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender LEFT JOIN FETCH m.attachments " +
+    @Query("SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender " +
            "WHERE m.club.id = :clubId AND m.department.id = :departmentId AND m.id < :beforeMessageId AND m.isDeleted = false " +
            "ORDER BY m.id DESC")
     List<ChatMessage> findDepartmentMessagesBeforeId(@Param("clubId") Integer clubId,
@@ -32,13 +32,13 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
                                                       Pageable pageable);
 
     // 3. Phân trang tin mới nhất của Kênh chung CLB (departmentId IS NULL)
-    @Query("SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender LEFT JOIN FETCH m.attachments " +
+    @Query("SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender " +
            "WHERE m.club.id = :clubId AND m.department IS NULL AND m.isDeleted = false " +
            "ORDER BY m.id DESC")
     List<ChatMessage> findRecentClubMessages(@Param("clubId") Integer clubId, Pageable pageable);
 
     // 4. Phân trang cuộn lên của Kênh chung CLB (id < beforeMessageId)
-    @Query("SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender LEFT JOIN FETCH m.attachments " +
+    @Query("SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender " +
            "WHERE m.club.id = :clubId AND m.department IS NULL AND m.id < :beforeMessageId AND m.isDeleted = false " +
            "ORDER BY m.id DESC")
     List<ChatMessage> findClubMessagesBeforeId(@Param("clubId") Integer clubId,

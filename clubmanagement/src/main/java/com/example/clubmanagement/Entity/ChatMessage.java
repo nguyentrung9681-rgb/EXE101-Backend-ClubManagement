@@ -3,6 +3,7 @@ package com.example.clubmanagement.Entity;
 import com.example.clubmanagement.Enum.MessageType;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,6 +54,7 @@ public class ChatMessage {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @BatchSize(size = 50)
     @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<ChatAttachment> attachments = new ArrayList<>();
