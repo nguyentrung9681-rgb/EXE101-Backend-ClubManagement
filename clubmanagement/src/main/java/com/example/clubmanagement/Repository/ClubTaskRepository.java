@@ -19,29 +19,46 @@ public interface ClubTaskRepository extends JpaRepository<ClubTask, Integer> {
     Optional<ClubTask> findByTrelloCardId(String trelloCardId);
     void deleteByClubId(Integer clubId);
 
-    // ─── Danh sách task: nạp sẵn club/event/assignedUser + lọc bằng SQL thay vì trong RAM ───
+    // ─── Danh sách task với JOIN FETCH để tránh N+1 query ───
 
+    /**
+     * Lấy tất cả task trong CLB, nạp sẵn club/event/assignedUser.
+     * Lọc department và status tại DB thay vì trong RAM.
+     */
     @Query("SELECT t FROM ClubTask t " +
-            "LEFT JOIN FETCH t.club LEFT JOIN FETCH t.event LEFT JOIN FETCH t.assignedUser " +
+            "JOIN FETCH t.club " +
+            "LEFT JOIN FETCH t.event " +
+            "LEFT JOIN FETCH t.assignedUser " +
             "WHERE t.club.id = :clubId " +
             "AND (:department IS NULL OR LOWER(t.department) = LOWER(:department)) " +
             "AND (:status IS NULL OR LOWER(t.status) = LOWER(:status))")
     List<ClubTask> findInClubWithDetails(@Param("clubId") Integer clubId,
-                                        @Param("department") String department,
-                                        @Param("status") String status);
+                                         @Param("department") String department,
+                                         @Param("status") String status);
 
+    /**
+     * Lấy task được gán cho userId cụ thể trong CLB.
+     * Dùng JOIN (không phải LEFT JOIN) với assignedUser vì đây là filter điều kiện bắt buộc.
+     */
     @Query("SELECT t FROM ClubTask t " +
-            "LEFT JOIN FETCH t.club LEFT JOIN FETCH t.event LEFT JOIN FETCH t.assignedUser " +
-            "WHERE t.club.id = :clubId AND t.assignedUser.userId = :userId " +
+            "JOIN FETCH t.club " +
+            "LEFT JOIN FETCH t.event " +
+            "JOIN FETCH t.assignedUser au " +
+            "WHERE t.club.id = :clubId AND au.userId = :userId " +
             "AND (:department IS NULL OR LOWER(t.department) = LOWER(:department)) " +
             "AND (:status IS NULL OR LOWER(t.status) = LOWER(:status))")
     List<ClubTask> findAssignedToUserInClubWithDetails(@Param("clubId") Integer clubId,
-                                                      @Param("userId") Integer userId,
-                                                      @Param("department") String department,
-                                                      @Param("status") String status);
+                                                       @Param("userId") Integer userId,
+                                                       @Param("department") String department,
+                                                       @Param("status") String status);
 
+    /**
+     * Lấy task finance của CLB.
+     */
     @Query("SELECT t FROM ClubTask t " +
-            "LEFT JOIN FETCH t.club LEFT JOIN FETCH t.event LEFT JOIN FETCH t.assignedUser " +
+            "JOIN FETCH t.club " +
+            "LEFT JOIN FETCH t.event " +
+            "LEFT JOIN FETCH t.assignedUser " +
             "WHERE t.club.id = :clubId AND t.isFinanceRelated = true " +
             "AND (:department IS NULL OR LOWER(t.department) = LOWER(:department)) " +
             "AND (:status IS NULL OR LOWER(t.status) = LOWER(:status))")
@@ -49,15 +66,21 @@ public interface ClubTaskRepository extends JpaRepository<ClubTask, Integer> {
                                                 @Param("department") String department,
                                                 @Param("status") String status);
 
+    /**
+     * Lấy task thuộc 1 sự kiện cụ thể.
+     * Dùng JOIN (không LEFT JOIN) với event vì eventId là điều kiện bắt buộc.
+     */
     @Query("SELECT t FROM ClubTask t " +
-            "LEFT JOIN FETCH t.club LEFT JOIN FETCH t.event LEFT JOIN FETCH t.assignedUser " +
-            "WHERE t.club.id = :clubId AND t.event.id = :eventId " +
+            "JOIN FETCH t.club " +
+            "JOIN FETCH t.event ev " +
+            "LEFT JOIN FETCH t.assignedUser " +
+            "WHERE t.club.id = :clubId AND ev.id = :eventId " +
             "AND (:department IS NULL OR LOWER(t.department) = LOWER(:department)) " +
             "AND (:status IS NULL OR LOWER(t.status) = LOWER(:status))")
     List<ClubTask> findInEventWithDetails(@Param("clubId") Integer clubId,
-                                         @Param("eventId") Integer eventId,
-                                         @Param("department") String department,
-                                         @Param("status") String status);
+                                          @Param("eventId") Integer eventId,
+                                          @Param("department") String department,
+                                          @Param("status") String status);
 
     /**
      * Thống kê hiệu suất theo từng thành viên chỉ bằng 1 câu GROUP BY,
