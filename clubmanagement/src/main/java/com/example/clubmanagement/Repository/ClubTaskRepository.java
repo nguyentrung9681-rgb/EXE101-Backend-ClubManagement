@@ -30,8 +30,8 @@ public interface ClubTaskRepository extends JpaRepository<ClubTask, Integer> {
             "LEFT JOIN FETCH t.event " +
             "LEFT JOIN FETCH t.assignedUser " +
             "WHERE t.club.id = :clubId " +
-            "AND (:department IS NULL OR LOWER(t.department) = LOWER(:department)) " +
-            "AND (:status IS NULL OR LOWER(t.status) = LOWER(:status))")
+            "AND (CAST(:department AS string) IS NULL OR LOWER(t.department) = LOWER(CAST(:department AS string))) " +
+            "AND (CAST(:status AS string) IS NULL OR LOWER(t.status) = LOWER(CAST(:status AS string)))")
     List<ClubTask> findInClubWithDetails(@Param("clubId") Integer clubId,
                                          @Param("department") String department,
                                          @Param("status") String status);
@@ -45,8 +45,8 @@ public interface ClubTaskRepository extends JpaRepository<ClubTask, Integer> {
             "LEFT JOIN FETCH t.event " +
             "JOIN FETCH t.assignedUser au " +
             "WHERE t.club.id = :clubId AND au.userId = :userId " +
-            "AND (:department IS NULL OR LOWER(t.department) = LOWER(:department)) " +
-            "AND (:status IS NULL OR LOWER(t.status) = LOWER(:status))")
+            "AND (CAST(:department AS string) IS NULL OR LOWER(t.department) = LOWER(CAST(:department AS string))) " +
+            "AND (CAST(:status AS string) IS NULL OR LOWER(t.status) = LOWER(CAST(:status AS string)))")
     List<ClubTask> findAssignedToUserInClubWithDetails(@Param("clubId") Integer clubId,
                                                        @Param("userId") Integer userId,
                                                        @Param("department") String department,
@@ -60,8 +60,8 @@ public interface ClubTaskRepository extends JpaRepository<ClubTask, Integer> {
             "LEFT JOIN FETCH t.event " +
             "LEFT JOIN FETCH t.assignedUser " +
             "WHERE t.club.id = :clubId AND t.isFinanceRelated = true " +
-            "AND (:department IS NULL OR LOWER(t.department) = LOWER(:department)) " +
-            "AND (:status IS NULL OR LOWER(t.status) = LOWER(:status))")
+            "AND (CAST(:department AS string) IS NULL OR LOWER(t.department) = LOWER(CAST(:department AS string))) " +
+            "AND (CAST(:status AS string) IS NULL OR LOWER(t.status) = LOWER(CAST(:status AS string)))")
     List<ClubTask> findFinanceInClubWithDetails(@Param("clubId") Integer clubId,
                                                 @Param("department") String department,
                                                 @Param("status") String status);
@@ -75,8 +75,8 @@ public interface ClubTaskRepository extends JpaRepository<ClubTask, Integer> {
             "JOIN FETCH t.event ev " +
             "LEFT JOIN FETCH t.assignedUser " +
             "WHERE t.club.id = :clubId AND ev.id = :eventId " +
-            "AND (:department IS NULL OR LOWER(t.department) = LOWER(:department)) " +
-            "AND (:status IS NULL OR LOWER(t.status) = LOWER(:status))")
+            "AND (CAST(:department AS string) IS NULL OR LOWER(t.department) = LOWER(CAST(:department AS string))) " +
+            "AND (CAST(:status AS string) IS NULL OR LOWER(t.status) = LOWER(CAST(:status AS string)))")
     List<ClubTask> findInEventWithDetails(@Param("clubId") Integer clubId,
                                           @Param("eventId") Integer eventId,
                                           @Param("department") String department,
