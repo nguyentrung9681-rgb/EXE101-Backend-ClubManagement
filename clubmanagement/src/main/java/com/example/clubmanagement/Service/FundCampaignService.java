@@ -12,7 +12,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -44,15 +48,18 @@ public class FundCampaignService {
 
         // Khởi tạo trạng thái thu tiền cho toàn bộ thành viên CLB
         List<ClubMember> members = clubMemberRepo.findByClubId(clubId);
+        List<FundContribution> contributions = new ArrayList<>(members.size());
         for (ClubMember member : members) {
-            FundContribution contrib = FundContribution.builder()
+            contributions.add(FundContribution.builder()
                     .campaign(savedCampaign)
                     .user(member.getUser())
                     .status(ContributionStatus.UNPAID)
-                    .build();
-            contributionRepo.save(contrib);
+                    .build());
+        }
+        contributionRepo.saveAll(contributions);
 
-            // Gửi email/thông báo thông tin đợt đóng quỹ mới
+        // Gửi email/thông báo thông tin đợt đóng quỹ mới
+        for (ClubMember member : members) {
             if (member.getUser() != null && member.getUser().getEmail() != null) {
                 try {
                     emailService.sendEmail(member.getUser().getEmail(),
@@ -62,14 +69,18 @@ public class FundCampaignService {
             }
         }
 
-        return mapCampaignToDto(savedCampaign);
+        return getCampaignById(savedCampaign.getId());
     }
 
     @Transactional(readOnly = true)
     public List<FundCampaignResponse> getCampaignsByClub(Integer clubId) {
-        return campaignRepo.findByClubIdOrderByCreatedAtDesc(clubId)
-                .stream()
-                .map(this::mapCampaignToDto)
+        List<FundCampaign> campaigns = campaignRepo.getByClubIdOrderByCreatedAtDesc(clubId);
+        if (campaigns.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, long[]> stats = loadStats(campaigns.stream().map(FundCampaign::getId).toList());
+        return campaigns.stream()
+                .map(c -> mapCampaignToDto(c, stats.getOrDefault(c.getId(), new long[2])))
                 .toList();
     }
 
@@ -77,12 +88,12 @@ public class FundCampaignService {
     public FundCampaignResponse getCampaignById(Integer campaignId) {
         FundCampaign campaign = campaignRepo.findById(campaignId)
                 .orElseThrow(() -> new RuntimeException("Campaign not found with ID: " + campaignId));
-        return mapCampaignToDto(campaign);
+        return mapCampaignToDto(campaign, loadStats(List.of(campaignId)).getOrDefault(campaignId, new long[2]));
     }
 
     @Transactional(readOnly = true)
     public List<FundContributionResponse> getContributionsByCampaign(Integer campaignId) {
-        return contributionRepo.findByCampaignId(campaignId)
+        return contributionRepo.findByCampaignIdWithUser(campaignId)
                 .stream()
                 .map(this::mapContributionToDto)
                 .toList();
@@ -106,9 +117,9 @@ public class FundCampaignService {
         contributionRepo.save(c);
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public void remindUnpaidMembers(Integer campaignId) {
-        List<FundContribution> unpaids = contributionRepo.findByCampaignIdAndStatus(campaignId, ContributionStatus.UNPAID);
+        List<FundContribution> unpaids = contributionRepo.findByCampaignIdAndStatusWithUser(campaignId, ContributionStatus.UNPAID);
         for (FundContribution c : unpaids) {
             if (c.getUser() != null && c.getUser().getEmail() != null) {
                 try {
@@ -120,10 +131,21 @@ public class FundCampaignService {
         }
     }
 
-    private FundCampaignResponse mapCampaignToDto(FundCampaign campaign) {
-        List<FundContribution> list = contributionRepo.findByCampaignId(campaign.getId());
-        int totalMembers = list.size();
-        int paidMembers = (int) list.stream().filter(c -> c.getStatus() == ContributionStatus.PAID).count();
+    /** [totalMembers, paidMembers] cho nhiều chiến dịch chỉ trong 1 câu query. */
+    private Map<Integer, long[]> loadStats(Collection<Integer> campaignIds) {
+        Map<Integer, long[]> stats = new HashMap<>();
+        for (Object[] row : contributionRepo.aggregateStatsByCampaignIds(campaignIds, ContributionStatus.PAID)) {
+            stats.put((Integer) row[0], new long[]{
+                    ((Number) row[1]).longValue(),
+                    row[2] == null ? 0L : ((Number) row[2]).longValue()
+            });
+        }
+        return stats;
+    }
+
+    private FundCampaignResponse mapCampaignToDto(FundCampaign campaign, long[] stats) {
+        int totalMembers = (int) stats[0];
+        int paidMembers = (int) stats[1];
         BigDecimal amountPerMember = campaign.getAmountPerMember() != null ? campaign.getAmountPerMember() : BigDecimal.ZERO;
         BigDecimal totalCollected = amountPerMember.multiply(BigDecimal.valueOf(paidMembers));
         BigDecimal targetAmount = amountPerMember.multiply(BigDecimal.valueOf(totalMembers));

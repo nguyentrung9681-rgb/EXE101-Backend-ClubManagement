@@ -3,11 +3,13 @@ package com.example.clubmanagement.Service;
 import com.example.clubmanagement.Entity.*;
 import com.example.clubmanagement.Enum.SyncStatus;
 import com.example.clubmanagement.Enum.ClubMemberRole;
+import com.example.clubmanagement.Enum.ClubMemberStatus;
 import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.dto.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -139,28 +141,24 @@ public class ClubTaskService {
         return response;
     }
 
+    @Transactional(readOnly = true)
     public List<ClubTaskResponse> getTasks(Integer clubId, Integer userId, String filterType, Integer eventId, String department, String status) {
         // Verify user belongs to the club
         clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
                 .orElseThrow(() -> new RuntimeException("Access denied: You are not a member of this club"));
 
+        String deptFilter = (department != null && !department.isEmpty()) ? department : null;
+        String statusFilter = (status != null && !status.isEmpty()) ? status : null;
+
         List<ClubTask> tasks;
         if ("my-tasks".equalsIgnoreCase(filterType)) {
-            tasks = taskRepository.findByAssignedUserUserId(userId);
-            tasks.removeIf(t -> !t.getClub().getId().equals(clubId));
+            tasks = taskRepository.findAssignedToUserInClubWithDetails(clubId, userId, deptFilter, statusFilter);
         } else if ("finance".equalsIgnoreCase(filterType)) {
-            tasks = taskRepository.findByClubIdAndIsFinanceRelatedTrue(clubId);
+            tasks = taskRepository.findFinanceInClubWithDetails(clubId, deptFilter, statusFilter);
         } else if ("event".equalsIgnoreCase(filterType) && eventId != null) {
-            tasks = taskRepository.findByEventId(eventId);
+            tasks = taskRepository.findInEventWithDetails(clubId, eventId, deptFilter, statusFilter);
         } else {
-            tasks = taskRepository.findByClubId(clubId);
-        }
-
-        if (department != null && !department.isEmpty()) {
-            tasks.removeIf(t -> t.getDepartment() == null || !t.getDepartment().equalsIgnoreCase(department));
-        }
-        if (status != null && !status.isEmpty()) {
-            tasks.removeIf(t -> t.getStatus() == null || !t.getStatus().equalsIgnoreCase(status));
+            tasks = taskRepository.findInClubWithDetails(clubId, deptFilter, statusFilter);
         }
 
         List<ClubTaskResponse> responses = new ArrayList<>();
@@ -304,11 +302,12 @@ public class ClubTaskService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public List<ClubTaskResponse> getOverdueAndUpcomingReminders(Integer clubId, Integer userId) {
         clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
                 .orElseThrow(() -> new RuntimeException("Access denied: You are not a member of this club"));
 
-        List<ClubTask> tasks = taskRepository.findByClubId(clubId);
+        List<ClubTask> tasks = taskRepository.findInClubWithDetails(clubId, null, null);
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime threshold = now.plusHours(48);
 
@@ -324,32 +323,35 @@ public class ClubTaskService {
         return reminders;
     }
 
+    @Transactional(readOnly = true)
     public List<MemberPerformanceResponse> getMemberPerformanceReport(Integer clubId, Integer userId) {
         clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
                 .orElseThrow(() -> new RuntimeException("Access denied: You are not a member of this club"));
 
-        List<ClubMember> members = clubMemberRepository.findByClubId(clubId);
-        List<ClubTask> allTasks = taskRepository.findByClubId(clubId);
+        // [userId, assigned, completed, inProgress, overdue] -> tra về 1 hàng per thành viên
+        Map<Integer, long[]> statsByUser = new HashMap<>();
         LocalDateTime now = LocalDateTime.now();
+        for (Object[] row : taskRepository.countTasksByMember(clubId, now)) {
+            Integer assignedUserId = (Integer) row[0];
+            statsByUser.put(assignedUserId, new long[]{
+                    ((Number) row[1]).longValue(),
+                    row[2] == null ? 0L : ((Number) row[2]).longValue(),
+                    row[3] == null ? 0L : ((Number) row[3]).longValue(),
+                    row[4] == null ? 0L : ((Number) row[4]).longValue()
+            });
+        }
 
         List<MemberPerformanceResponse> reports = new ArrayList<>();
-        for (ClubMember cm : members) {
-            User u = cm.getUser();
-            if (u == null) continue;
-
-            long assigned = allTasks.stream().filter(t -> t.getAssignedUser() != null && t.getAssignedUser().getUserId().equals(u.getUserId())).count();
-            long completed = allTasks.stream().filter(t -> t.getAssignedUser() != null && t.getAssignedUser().getUserId().equals(u.getUserId()) && "DONE".equalsIgnoreCase(t.getStatus())).count();
-            long doing = allTasks.stream().filter(t -> t.getAssignedUser() != null && t.getAssignedUser().getUserId().equals(u.getUserId()) && "DOING".equalsIgnoreCase(t.getStatus())).count();
-            long overdue = allTasks.stream().filter(t -> t.getAssignedUser() != null && t.getAssignedUser().getUserId().equals(u.getUserId()) && t.getDueDate() != null && t.getDueDate().isBefore(now) && !"DONE".equalsIgnoreCase(t.getStatus())).count();
-
+        for (User u : clubMemberRepository.findUsersByClubIdAndStatus(clubId, ClubMemberStatus.ACTIVE)) {
+            long[] stats = statsByUser.getOrDefault(u.getUserId(), new long[4]);
             reports.add(MemberPerformanceResponse.builder()
                     .userId(u.getUserId())
                     .fullName(u.getFullName())
                     .email(u.getEmail())
-                    .assignedTasksCount(assigned)
-                    .completedTasksCount(completed)
-                    .inProgressTasksCount(doing)
-                    .overdueTasksCount(overdue)
+                    .assignedTasksCount(stats[0])
+                    .completedTasksCount(stats[1])
+                    .inProgressTasksCount(stats[2])
+                    .overdueTasksCount(stats[3])
                     .build());
         }
         return reports;

@@ -85,7 +85,7 @@ public class DepartmentService {
             throw new RuntimeException("Tài khoản thành viên của bạn chưa hoạt động trong câu lạc bộ này!");
         }
 
-        return departmentRepository.findByClubId(clubId).stream()
+        return departmentRepository.getByClubId(clubId).stream()
                 .map(this::mapToDepartmentResponse)
                 .collect(Collectors.toList());
     }

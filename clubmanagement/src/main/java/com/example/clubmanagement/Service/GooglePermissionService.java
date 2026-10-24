@@ -256,9 +256,10 @@ public class GooglePermissionService {
     // 4. Lấy danh sách & Chi tiết quyền
     // ─────────────────────────────────────────────────────────────────────────
 
+    @Transactional(readOnly = true)
     public List<GooglePermissionResponse> getClubPermissions(Integer requesterUserId, Integer clubId) {
         checkActiveMember(clubId, requesterUserId);
-        return clubGooglePermissionRepository.findByClubId(clubId).stream()
+        return clubGooglePermissionRepository.findByClubIdWithUsers(clubId).stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }

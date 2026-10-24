@@ -113,17 +113,20 @@ public class ClubService {
         return savedClub;
     }
 
+    @Transactional(readOnly = true)
     public List<Club> getAllClubs() {
-        return clubRepository.findAll();
+        return clubRepository.findAllWithCreatedBy();
     }
 
+    @Transactional(readOnly = true)
     public Club getClubById(Integer id) {
-        return clubRepository.findById(id)
+        return clubRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy Câu lạc bộ!"));
     }
 
+    @Transactional(readOnly = true)
     public List<ClubMember> getUserMemberships(Integer userId) {
-        return clubMemberRepository.findByUserUserId(userId);
+        return clubMemberRepository.findByUserUserIdWithDetails(userId);
     }
 
     /**
@@ -178,12 +181,11 @@ public class ClubService {
     /**
      * Lấy danh sách thành viên chờ duyệt (Chỉ dành cho chủ nhiệm).
      */
+    @Transactional(readOnly = true)
     public List<ClubMember> getPendingMembers(Integer clubId, Integer requesterUserId) {
         checkPresidentPrivilege(clubId, requesterUserId);
 
-        return clubMemberRepository.findByClubId(clubId).stream()
-                .filter(member -> member.getStatus() == ClubMemberStatus.PENDING)
-                .toList();
+        return clubMemberRepository.findByClubIdAndStatusWithDetails(clubId, ClubMemberStatus.PENDING);
     }
 
     /**
@@ -219,13 +221,12 @@ public class ClubService {
     /**
      * Lấy danh sách các thành viên đang hoạt động của câu lạc bộ.
      */
+    @Transactional(readOnly = true)
     public List<ClubMember> getClubMembers(Integer clubId) {
         if (!clubRepository.existsById(clubId)) {
             throw new RuntimeException("Không tìm thấy Câu lạc bộ!");
         }
-        return clubMemberRepository.findByClubId(clubId).stream()
-                .filter(member -> member.getStatus() == ClubMemberStatus.ACTIVE)
-                .toList();
+        return clubMemberRepository.findByClubIdAndStatusWithDetails(clubId, ClubMemberStatus.ACTIVE);
     }
 
     private void checkPresidentPrivilege(Integer clubId, Integer requesterUserId) {

@@ -16,7 +16,7 @@ import java.util.List;
 
 public interface FinancialTransactionRepository extends JpaRepository<FinancialTransaction, Integer> {
 
-    @Query("SELECT ft FROM FinancialTransaction ft WHERE ft.club.id = :clubId " +
+    @Query("SELECT ft FROM FinancialTransaction ft LEFT JOIN FETCH ft.createdBy WHERE ft.club.id = :clubId " +
             "AND (:search IS NULL OR LOWER(ft.description) LIKE LOWER(CONCAT('%', :search, '%'))) " +
             "AND (:type IS NULL OR ft.type = :type) " +
             "AND (:category IS NULL OR ft.category = :category) " +

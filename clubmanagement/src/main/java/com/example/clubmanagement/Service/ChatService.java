@@ -291,34 +291,29 @@ public class ChatService {
 
     private void notifyDepartmentMembers(Integer clubId, Integer departmentId, User sender, ChatMessage message) {
         try {
-            List<ClubMember> members = clubMemberRepository.findByDepartmentId(departmentId);
-            for (ClubMember m : members) {
-                if (m.getStatus() == ClubMemberStatus.ACTIVE
-                        && m.getUser() != null
-                        && !m.getUser().getUserId().equals(sender.getUserId())) {
-                    NotificationDto notification = NotificationDto.builder()
-                            .type("NEW_CHAT_MESSAGE")
-                            .title("Tin nhắn mới từ " + sender.getFullName())
-                            .snippet(message.getContent() != null ? message.getContent() : "[Tệp đính kèm]")
-                            .clubId(clubId)
-                            .departmentId(departmentId)
-                            .messageId(message.getId())
-                            .senderId(sender.getUserId())
-                            .senderName(sender.getFullName())
-                            .senderAvatar(sender.getAvatarUrl())
-                            .createdAt(message.getCreatedAt())
-                            .build();
-
-                    simpMessagingTemplate.convertAndSendToUser(
-                            m.getUser().getUsername(),
-                            "/queue/notifications",
-                            notification
-                    );
-                    simpMessagingTemplate.convertAndSend(
-                            "/topic/users/" + m.getUser().getUserId() + "/notifications",
-                            notification
-                    );
+            String snippet = message.getContent() != null ? message.getContent() : "[Tệp đính kèm]";
+            for (Object[] row : clubMemberRepository.findUserIdAndUsernameByDepartmentIdAndStatus(
+                    departmentId, ClubMemberStatus.ACTIVE)) {
+                Integer userId = (Integer) row[0];
+                String username = (String) row[1];
+                if (username == null || userId.equals(sender.getUserId())) {
+                    continue;
                 }
+                NotificationDto notification = NotificationDto.builder()
+                        .type("NEW_CHAT_MESSAGE")
+                        .title("Tin nhắn mới từ " + sender.getFullName())
+                        .snippet(snippet)
+                        .clubId(clubId)
+                        .departmentId(departmentId)
+                        .messageId(message.getId())
+                        .senderId(sender.getUserId())
+                        .senderName(sender.getFullName())
+                        .senderAvatar(sender.getAvatarUrl())
+                        .createdAt(message.getCreatedAt())
+                        .build();
+
+                simpMessagingTemplate.convertAndSendToUser(username, "/queue/notifications", notification);
+                simpMessagingTemplate.convertAndSend("/topic/users/" + userId + "/notifications", notification);
             }
         } catch (Exception e) {
             log.error("Lỗi khi gửi thông báo tin nhắn phòng ban: {}", e.getMessage());
@@ -327,33 +322,30 @@ public class ChatService {
 
     private void notifyClubMembers(Integer clubId, User sender, ChatMessage message) {
         try {
-            List<ClubMember> members = clubMemberRepository.findByClubId(clubId);
-            for (ClubMember m : members) {
-                if (m.getStatus() == ClubMemberStatus.ACTIVE
-                        && m.getUser() != null
-                        && !m.getUser().getUserId().equals(sender.getUserId())) {
-                    NotificationDto notification = NotificationDto.builder()
-                            .type("NEW_CHAT_MESSAGE")
-                            .title(message.getClub().getName() + " - " + sender.getFullName())
-                            .snippet(message.getContent() != null ? message.getContent() : "[Tệp đính kèm]")
-                            .clubId(clubId)
-                            .messageId(message.getId())
-                            .senderId(sender.getUserId())
-                            .senderName(sender.getFullName())
-                            .senderAvatar(sender.getAvatarUrl())
-                            .createdAt(message.getCreatedAt())
-                            .build();
-
-                    simpMessagingTemplate.convertAndSendToUser(
-                            m.getUser().getUsername(),
-                            "/queue/notifications",
-                            notification
-                    );
-                    simpMessagingTemplate.convertAndSend(
-                            "/topic/users/" + m.getUser().getUserId() + "/notifications",
-                            notification
-                    );
+            String snippet = message.getContent() != null ? message.getContent() : "[Tệp đính kèm]";
+            String clubName = message.getClub() != null ? message.getClub().getName() : null;
+            String title = (clubName != null ? clubName + " - " : "") + sender.getFullName();
+            for (Object[] row : clubMemberRepository.findUserIdAndUsernameByClubIdAndStatus(
+                    clubId, ClubMemberStatus.ACTIVE)) {
+                Integer userId = (Integer) row[0];
+                String username = (String) row[1];
+                if (username == null || userId.equals(sender.getUserId())) {
+                    continue;
                 }
+                NotificationDto notification = NotificationDto.builder()
+                        .type("NEW_CHAT_MESSAGE")
+                        .title(title)
+                        .snippet(snippet)
+                        .clubId(clubId)
+                        .messageId(message.getId())
+                        .senderId(sender.getUserId())
+                        .senderName(sender.getFullName())
+                        .senderAvatar(sender.getAvatarUrl())
+                        .createdAt(message.getCreatedAt())
+                        .build();
+
+                simpMessagingTemplate.convertAndSendToUser(username, "/queue/notifications", notification);
+                simpMessagingTemplate.convertAndSend("/topic/users/" + userId + "/notifications", notification);
             }
         } catch (Exception e) {
             log.error("Lỗi khi gửi thông báo tin nhắn CLB: {}", e.getMessage());

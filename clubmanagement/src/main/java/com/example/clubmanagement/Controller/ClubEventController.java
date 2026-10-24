@@ -103,8 +103,10 @@ public class ClubEventController {
      */
     @GetMapping("/club/{clubId}")
     public ResponseEntity<List<ClubEventResponse>> getEventsByClub(@PathVariable Integer clubId) {
-        List<ClubEventResponse> responses = clubEventService.getEventsByClubId(clubId).stream()
-                .map(this::mapToClubEventResponse)
+        List<ClubEvent> events = clubEventService.getEventsByClubId(clubId);
+        Map<Integer, EventGoogleSync> syncMap = clubEventService.getSyncInfoMap(events);
+        List<ClubEventResponse> responses = events.stream()
+                .map(e -> mapToClubEventResponse(e, Optional.ofNullable(syncMap.get(e.getId()))))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(responses);
     }
@@ -148,9 +150,11 @@ public class ClubEventController {
             @RequestParam(required = false) Integer clubId,
             @RequestParam String viewType,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        
-        List<ClubEventResponse> responses = clubEventService.getFilteredEvents(clubId, viewType, date).stream()
-                .map(this::mapToClubEventResponse)
+
+        List<ClubEvent> events = clubEventService.getFilteredEvents(clubId, viewType, date);
+        Map<Integer, EventGoogleSync> syncMap = clubEventService.getSyncInfoMap(events);
+        List<ClubEventResponse> responses = events.stream()
+                .map(e -> mapToClubEventResponse(e, Optional.ofNullable(syncMap.get(e.getId()))))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(responses);
     }
@@ -173,9 +177,12 @@ public class ClubEventController {
     }
 
     private ClubEventResponse mapToClubEventResponse(ClubEvent event) {
+        return mapToClubEventResponse(event, clubEventService.getSyncInfo(event.getId()));
+    }
+
+    private ClubEventResponse mapToClubEventResponse(ClubEvent event, Optional<EventGoogleSync> syncOpt) {
         if (event == null) return null;
-        
-        Optional<EventGoogleSync> syncOpt = clubEventService.getSyncInfo(event.getId());
+
         String googleEventLink = syncOpt.map(EventGoogleSync::getGoogleEventLink).orElse(null);
         String syncStatus = syncOpt.map(s -> s.getSyncStatus().name()).orElse(null);
 

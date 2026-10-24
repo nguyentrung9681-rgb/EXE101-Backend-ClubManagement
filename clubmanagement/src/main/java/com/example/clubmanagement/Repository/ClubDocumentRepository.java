@@ -20,7 +20,9 @@ public interface ClubDocumentRepository extends JpaRepository<ClubDocument, Inte
     Optional<ClubDocument> findByWebhookChannelIdAndWebhookResourceId(String channelId, String resourceId);
     void deleteByClubId(Integer clubId);
 
-    @Query("SELECT d FROM ClubDocument d WHERE d.club.id = :clubId " +
+    @Query("SELECT d FROM ClubDocument d " +
+           "LEFT JOIN FETCH d.createdBy LEFT JOIN FETCH d.event LEFT JOIN FETCH d.club " +
+           "WHERE d.club.id = :clubId " +
            "AND (CAST(:search AS string) IS NULL OR LOWER(d.title) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) OR LOWER(d.contentSummary) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))) " +
            "AND (:category IS NULL OR d.category = :category OR (d.category IS NULL AND (:category = com.example.clubmanagement.Enum.DocumentCategory.EVENT AND d.event IS NOT NULL)) OR (d.category IS NULL AND (:category = com.example.clubmanagement.Enum.DocumentCategory.CLUB_ACTIVITY AND d.event IS NULL))) " +
            "AND (:documentType IS NULL OR d.documentType = :documentType)")

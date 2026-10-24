@@ -2,6 +2,8 @@ package com.example.clubmanagement.Repository;
 
 import com.example.clubmanagement.Entity.ClubGooglePermission;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -13,6 +15,12 @@ public interface ClubGooglePermissionRepository extends JpaRepository<ClubGoogle
     Optional<ClubGooglePermission> findByClubIdAndUserUserId(Integer clubId, Integer userId);
 
     List<ClubGooglePermission> findByClubId(Integer clubId);
+
+    /** Nạp sẵn user và người phân quyền để bảng phân quyền chỉ dùng 1 câu query. */
+    @Query("SELECT p FROM ClubGooglePermission p " +
+            "JOIN FETCH p.user LEFT JOIN FETCH p.grantedBy " +
+            "WHERE p.club.id = :clubId")
+    List<ClubGooglePermission> findByClubIdWithUsers(@Param("clubId") Integer clubId);
 
     void deleteByClubIdAndUserUserId(Integer clubId, Integer userId);
 

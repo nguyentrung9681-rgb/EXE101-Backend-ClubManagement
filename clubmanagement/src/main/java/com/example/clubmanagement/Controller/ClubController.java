@@ -66,7 +66,7 @@ public class ClubController {
     @GetMapping
     public ResponseEntity<List<ClubResponse>> getAllClubs() {
         List<ClubResponse> responses = clubService.getAllClubs().stream()
-                .map(this::mapToClubResponse)
+                .map(this::mapToClubSummary)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(responses);
     }
@@ -388,6 +388,23 @@ public class ClubController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /** Bản dùng cho danh sách: không chạm vào deletionPermittedUsers để tránh nạp ManyToMany per-row. */
+    private ClubResponse mapToClubSummary(Club club) {
+        if (club == null) return null;
+        return ClubResponse.builder()
+                .id(club.getId())
+                .name(club.getName())
+                .description(club.getDescription())
+                .logoUrl(club.getLogoUrl())
+                .status(club.getStatus() != null ? club.getStatus().name() : null)
+                .visibility(club.getVisibility() != null ? club.getVisibility().name() : ClubVisibility.PUBLIC.name())
+                .createdByUserId(club.getCreatedBy() != null ? club.getCreatedBy().getUserId() : null)
+                .createdByName(club.getCreatedBy() != null ? club.getCreatedBy().getFullName() : null)
+                .createdAt(club.getCreatedAt())
+                .updatedAt(club.getUpdatedAt())
+                .build();
     }
 
     private ClubResponse mapToClubResponse(Club club) {

@@ -5,6 +5,7 @@ import com.example.clubmanagement.Enum.ClubMemberRole;
 import com.example.clubmanagement.Enum.SyncSource;
 import com.example.clubmanagement.Enum.SyncStatus;
 import com.example.clubmanagement.Repository.*;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +16,7 @@ import java.time.DayOfWeek;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class ClubEventService {
@@ -129,7 +131,7 @@ public class ClubEventService {
             throw new RuntimeException("Bạn không có quyền chỉnh sửa sự kiện của câu lạc bộ này!");
         }
 
-        checkAndUpdateEventStatus(event);
+        applyComputedStatus(event);
         if ("ENDED".equals(event.getStatus())) {
             throw new RuntimeException("Sự kiện đã kết thúc, không thể chỉnh sửa!");
         }
@@ -206,7 +208,7 @@ public class ClubEventService {
             throw new RuntimeException("Bạn không có quyền xóa sự kiện của câu lạc bộ này!");
         }
 
-        checkAndUpdateEventStatus(event);
+        applyComputedStatus(event);
         if ("ENDED".equals(event.getStatus())) {
             throw new RuntimeException("Sự kiện đã kết thúc, không thể xóa!");
         }
@@ -249,26 +251,58 @@ public class ClubEventService {
         clubEventRepository.delete(event);
     }
 
+    @Transactional(readOnly = true)
     public List<ClubEvent> getEventsByClubId(Integer clubId) {
-        List<ClubEvent> events = clubEventRepository.findByClubId(clubId);
-        events.forEach(this::checkAndUpdateEventStatus);
+        List<ClubEvent> events = clubEventRepository.findByClubIdWithDetails(clubId);
+        events.forEach(this::applyComputedStatus);
         return events;
     }
 
+    @Transactional(readOnly = true)
     public ClubEvent getEventById(Integer eventId) {
         ClubEvent event = clubEventRepository.findById(eventId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy sự kiện!"));
-        checkAndUpdateEventStatus(event);
+        applyComputedStatus(event);
         return event;
     }
 
+    @Transactional(readOnly = true)
     public Optional<EventGoogleSync> getSyncInfo(Integer eventId) {
         return eventGoogleSyncRepository.findByClubEventId(eventId);
+    }
+
+    /** Sync info của nhiều sự kiện trong 1 câu query, tránh N+1 khi map danh sách. */
+    @Transactional(readOnly = true)
+    public Map<Integer, EventGoogleSync> getSyncInfoMap(List<ClubEvent> events) {
+        if (events == null || events.isEmpty()) {
+            return Map.of();
+        }
+        List<Integer> ids = events.stream().map(ClubEvent::getId).toList();
+        return eventGoogleSyncRepository.findByClubEventIdIn(ids).stream()
+                .collect(Collectors.toMap(s -> s.getClubEvent().getId(), s -> s, (a, b) -> a));
+    }
+
+    /**
+     * Chuyển ONGOING -> ENDED cho sự kiện đã kết thúc, chỉ tính trong bộ nhớ để hiển thị.
+     * Việc ghi DB do scheduled job {@link #expirePassedEvents()} đảm nhiệm.
+     */
+    private void applyComputedStatus(ClubEvent event) {
+        if ("ONGOING".equals(event.getStatus()) && LocalDateTime.now().isAfter(event.getEndTime())) {
+            event.setStatus("ENDED");
+        }
+    }
+
+    /** 1 câu UPDATE duy nhất cho mọi sự kiện quá hạn, chạy nền thay vì ghi trong API GET. */
+    @Scheduled(fixedDelay = 5 * 60 * 1000L, initialDelay = 60 * 1000L)
+    @Transactional
+    public void expirePassedEvents() {
+        clubEventRepository.markPassedEventsEnded(LocalDateTime.now());
     }
 
     /**
      * Lọc sự kiện theo khoảng thời gian: ngày, tuần, hoặc tháng.
      */
+    @Transactional(readOnly = true)
     public List<ClubEvent> getFilteredEvents(Integer clubId, String viewType, LocalDate date) {
         if (date == null) {
             date = LocalDate.now();
@@ -305,11 +339,11 @@ public class ClubEventService {
 
         List<ClubEvent> events;
         if (clubId != null) {
-            events = clubEventRepository.findByClubIdAndStartTimeBetween(clubId, start, end);
+            events = clubEventRepository.findByClubIdAndStartTimeBetweenWithDetails(clubId, start, end);
         } else {
-            events = clubEventRepository.findByStartTimeBetween(start, end);
+            events = clubEventRepository.findByStartTimeBetweenWithDetails(start, end);
         }
-        events.forEach(this::checkAndUpdateEventStatus);
+        events.forEach(this::applyComputedStatus);
         return events;
     }
 
@@ -362,16 +396,5 @@ public class ClubEventService {
 
         eventGoogleSyncRepository.save(sync);
         return event;
-    }
-    private void checkAndUpdateEventStatus(ClubEvent event) {
-        String currentStatus = event.getStatus();
-        if (currentStatus == null) {
-            currentStatus = "ONGOING";
-            event.setStatus(currentStatus);
-        }
-        if ("ONGOING".equals(currentStatus) && LocalDateTime.now().isAfter(event.getEndTime())) {
-            event.setStatus("ENDED");
-            clubEventRepository.save(event);
-        }
     }
 }

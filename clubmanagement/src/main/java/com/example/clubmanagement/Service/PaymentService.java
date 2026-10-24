@@ -267,7 +267,11 @@ public class PaymentService {
         ClubSubscription sub = subscriptionRepository.findFirstByClubIdAndStatusOrderByEndDateDesc(clubId, SubscriptionStatus.ACTIVE)
                 .orElse(null);
         if (sub == null) {
-            List<PaymentOrder> pendingOrders = orderRepository.findByClubIdAndStatus(clubId, OrderStatus.PENDING);
+            // Webhook PayOS đã là nguồn sự thật; ở đây chỉ dò lại vài đơn vừa tạo
+            // để thu dọn phiên checkout mà người dùng vừa rời trang.
+            List<PaymentOrder> pendingOrders = orderRepository
+                    .findTop3ByClubIdAndStatusAndCreatedAtAfterOrderByCreatedAtDesc(
+                            clubId, OrderStatus.PENDING, LocalDateTime.now().minusMinutes(30));
             boolean updatedAny = false;
             for (PaymentOrder pending : pendingOrders) {
                 if (syncOrderWithPayOS(pending)) {
