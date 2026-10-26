@@ -50,4 +50,10 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
     @Query("SELECT ft FROM FinancialTransaction ft WHERE ft.club.id = :clubId " +
             "AND ft.status = 'COMPLETED' AND ft.createdAt >= :since ORDER BY ft.createdAt ASC")
     List<FinancialTransaction> findCompletedSince(@Param("clubId") Integer clubId, @Param("since") LocalDateTime since);
+
+    @Query("SELECT ft FROM FinancialTransaction ft WHERE ft.club.id = :clubId " +
+            "AND ft.status = 'COMPLETED' AND ft.createdAt >= :from AND ft.createdAt < :to")
+    List<FinancialTransaction> findCompletedBetween(@Param("clubId") Integer clubId,
+                                                    @Param("from") LocalDateTime from,
+                                                    @Param("to") LocalDateTime to);
 }

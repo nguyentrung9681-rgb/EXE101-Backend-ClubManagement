@@ -45,8 +45,8 @@ public class EmailService {
     @Value("${mailjet.sender-email:Sclub.management.platform@gmail.com}")
     private String mailjetSenderEmail;
 
-    @Autowired(required = false)
-    public EmailService(JavaMailSender mailSender) {
+    @Autowired
+    public EmailService(@Autowired(required = false) JavaMailSender mailSender) {
         this.mailSender = mailSender;
     }
 
