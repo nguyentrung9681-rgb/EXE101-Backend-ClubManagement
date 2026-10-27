@@ -91,23 +91,26 @@ class FundCampaignServiceTest {
         when(userRepo.findById(10)).thenReturn(Optional.of(sampleUser));
         when(campaignRepo.save(any())).thenReturn(sampleCampaign);
         when(clubMemberRepo.findByClubId(1)).thenReturn(List.of(member));
-        when(contributionRepo.findByCampaignId(50)).thenReturn(List.of(sampleContribution));
+        // createCampaign ket thuc goi getCampaignById -> can stub findById + query thong ke GROUP BY
+        when(campaignRepo.findById(50)).thenReturn(Optional.of(sampleCampaign));
+        when(contributionRepo.aggregateStatsByCampaignIds(anyCollection(), eq(ContributionStatus.PAID)))
+                .thenReturn(List.<Object[]>of(new Object[]{50, 1L, 1L}));
 
         FundCampaignResponse result = campaignService.createCampaign(1, 10, req);
 
         assertNotNull(result);
         assertEquals(50, result.getId());
-        verify(contributionRepo, times(1)).save(any());
+        verify(contributionRepo, times(1)).saveAll(any());
         verify(emailService, times(1)).sendEmail(eq("tranvanb@example.com"), anyString(), anyString());
     }
 
     @Test
     @DisplayName("Test getCampaignsByClub lấy danh sách đợt thu quỹ của CLB")
     void testGetCampaignsByClub() {
-        when(campaignRepo.findByClubIdOrderByCreatedAtDesc(1))
+        when(campaignRepo.getByClubIdOrderByCreatedAtDesc(1))
                 .thenReturn(List.of(sampleCampaign));
-        when(contributionRepo.findByCampaignId(50))
-                .thenReturn(List.of(sampleContribution));
+        when(contributionRepo.aggregateStatsByCampaignIds(anyCollection(), eq(ContributionStatus.PAID)))
+                .thenReturn(List.<Object[]>of(new Object[]{50, 1L, 0L}));
 
         List<FundCampaignResponse> list = campaignService.getCampaignsByClub(1);
 
@@ -133,7 +136,7 @@ class FundCampaignServiceTest {
     @Test
     @DisplayName("Test getContributionsByCampaign lấy danh sách đóng tiền của đợt thu quỹ")
     void testGetContributionsByCampaign() {
-        when(contributionRepo.findByCampaignId(50)).thenReturn(List.of(sampleContribution));
+        when(contributionRepo.findByCampaignIdWithUser(50)).thenReturn(List.of(sampleContribution));
 
         List<FundContributionResponse> list = campaignService.getContributionsByCampaign(50);
 
@@ -172,7 +175,7 @@ class FundCampaignServiceTest {
     @Test
     @DisplayName("Test remindUnpaidMembers gửi email nhắc nhở hàng loạt thành viên chưa đóng tiền")
     void testRemindUnpaidMembers() {
-        when(contributionRepo.findByCampaignIdAndStatus(50, ContributionStatus.UNPAID))
+        when(contributionRepo.findByCampaignIdAndStatusWithUser(50, ContributionStatus.UNPAID))
                 .thenReturn(List.of(sampleContribution));
 
         campaignService.remindUnpaidMembers(50);

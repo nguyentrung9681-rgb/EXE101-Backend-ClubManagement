@@ -11,6 +11,7 @@ import com.example.clubmanagement.dto.ClubDocumentResponse;
 import com.example.clubmanagement.dto.DocumentCategoryResponse;
 import com.example.clubmanagement.dto.DocumentRevisionResponse;
 import com.example.clubmanagement.dto.DocumentTypeResponse;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -47,7 +48,7 @@ public class ClubDocumentController {
                         .displayName(type.getDisplayName())
                         .build())
                 .collect(Collectors.toList());
-        return ResponseEntity.ok(types);
+        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(java.time.Duration.ofHours(6)).cachePublic()).body(types);
     }
 
     /**
@@ -62,7 +63,7 @@ public class ClubDocumentController {
                         .displayName(cat.getDisplayName())
                         .build())
                 .collect(Collectors.toList());
-        return ResponseEntity.ok(categories);
+        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(java.time.Duration.ofHours(6)).cachePublic()).body(categories);
     }
 
     /**
