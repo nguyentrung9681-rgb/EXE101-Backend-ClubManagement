@@ -4,6 +4,7 @@ import com.example.clubmanagement.Service.PaymentService;
 import com.example.clubmanagement.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import vn.payos.type.Webhook;
@@ -24,7 +25,8 @@ public class PaymentController {
     @GetMapping("/packages")
     @Operation(summary = "Lấy danh sách các gói dịch vụ khả dụng")
     public ResponseEntity<List<SubscriptionPackageResponse>> getPackages() {
-        return ResponseEntity.ok(paymentService.getAllPackages());
+        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(java.time.Duration.ofMinutes(10)).cachePublic())
+                .body(paymentService.getAllPackages());
     }
 
     @PostMapping("/payments/create-checkout")

@@ -5,6 +5,7 @@ import com.example.clubmanagement.Service.ChatService;
 import com.example.clubmanagement.dto.*;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -206,7 +207,8 @@ public class ChatController {
     @GetMapping("/emojis")
     public ResponseEntity<?> getAvailableEmojis() {
         try {
-            return ResponseEntity.ok(chatService.getAvailableEmojis());
+            return ResponseEntity.ok().cacheControl(CacheControl.maxAge(java.time.Duration.ofHours(6)).cachePublic())
+                    .body(chatService.getAvailableEmojis());
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
