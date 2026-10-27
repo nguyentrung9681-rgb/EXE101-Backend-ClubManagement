@@ -11,4 +11,5 @@ public interface ClubEventRepository extends JpaRepository<ClubEvent, Integer> {
     List<ClubEvent> findByClubId(Integer clubId);
     List<ClubEvent> findByStartTimeBetween(LocalDateTime start, LocalDateTime end);
     List<ClubEvent> findByClubIdAndStartTimeBetween(Integer clubId, LocalDateTime start, LocalDateTime end);
+    long countByClubId(Integer clubId);
 }

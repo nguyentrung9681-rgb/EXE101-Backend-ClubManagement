@@ -23,4 +23,8 @@ public interface ClubMemberRepository extends JpaRepository<ClubMember, Integer>
     /** Kiểm tra thành viên có đúng role và status không */
     Optional<ClubMember> findByClubIdAndUserUserIdAndRoleAndStatus(
             Integer clubId, Integer userId, ClubMemberRole role, ClubMemberStatus status);
+
+    long countByClubId(Integer clubId);
+    long countByClubIdAndStatus(Integer clubId, ClubMemberStatus status);
 }
+

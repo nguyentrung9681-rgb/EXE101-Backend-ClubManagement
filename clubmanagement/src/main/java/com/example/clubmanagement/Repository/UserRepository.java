@@ -17,4 +17,6 @@ public interface UserRepository extends JpaRepository<User, Integer> {
     Optional<User> findByGoogleId(String googleId);
 
     Optional<User> findByUsernameOrEmail(String username, String email);
+
+    long countByUserStatus(String userStatus);
 }

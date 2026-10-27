@@ -115,7 +115,7 @@ public class SecurityConfig {
                                 "/api/payments/**"
                         ).permitAll()
                         .requestMatchers("/ws-chat/**").permitAll()
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/admin/**", "/api/dashboard/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(rateLimitingFilter, LogoutFilter.class)

@@ -1,6 +1,7 @@
 package com.example.clubmanagement.Controller;
 
 import com.example.clubmanagement.Config.SecurityUtils;
+import com.example.clubmanagement.Service.AdminDashboardService;
 import com.example.clubmanagement.Service.UserService;
 import com.example.clubmanagement.dto.ChangePasswordRequest;
 import com.example.clubmanagement.dto.UserProfileRequest;
@@ -16,9 +17,27 @@ import java.util.Map;
 public class UserController {
 
     private final UserService userService;
+    private final AdminDashboardService adminDashboardService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, AdminDashboardService adminDashboardService) {
         this.userService = userService;
+        this.adminDashboardService = adminDashboardService;
+    }
+
+    /**
+     * Lấy danh sách người dùng trong hệ thống (dùng cho dashboard / admin).
+     * GET /api/users
+     */
+    @GetMapping
+    public ResponseEntity<?> getAllUsers(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String authProvider) {
+        try {
+            return ResponseEntity.ok(adminDashboardService.getAllUsers(search, status, authProvider));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     /**
