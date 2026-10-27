@@ -33,4 +33,6 @@ public interface ClubDocumentRepository extends JpaRepository<ClubDocument, Inte
             @Param("documentType") DocumentType documentType,
             Sort sort
     );
+
+    long countByClubId(Integer clubId);
 }

@@ -15,4 +15,5 @@ public interface GoogleSheetRepository extends JpaRepository<GoogleSheet, Intege
     List<GoogleSheet> findByClubId(Integer clubId);
     Optional<GoogleSheet> findBySpreadsheetIdAndClubId(String spreadsheetId, Integer clubId);
     void deleteByClubId(Integer clubId);
+    long countByClubId(Integer clubId);
 }

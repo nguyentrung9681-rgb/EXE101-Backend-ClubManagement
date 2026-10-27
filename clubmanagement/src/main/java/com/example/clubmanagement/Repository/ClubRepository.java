@@ -1,6 +1,8 @@
 package com.example.clubmanagement.Repository;
 
 import com.example.clubmanagement.Entity.Club;
+import com.example.clubmanagement.Enum.ClubStatus;
+import com.example.clubmanagement.Enum.ClubVisibility;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,7 +13,6 @@ import java.util.Optional;
 
 @Repository
 public interface ClubRepository extends JpaRepository<Club, Integer> {
-
     /** Nạp sẵn người tạo để danh sách CLB không phát sinh query per-row. */
     @Query("SELECT c FROM Club c LEFT JOIN FETCH c.createdBy")
     List<Club> findAllWithCreatedBy();
@@ -19,4 +20,7 @@ public interface ClubRepository extends JpaRepository<Club, Integer> {
     /** API chi tiết cần cả danh sách người được quyền xóa. */
     @Query("SELECT c FROM Club c LEFT JOIN FETCH c.createdBy LEFT JOIN FETCH c.deletionPermittedUsers WHERE c.id = :id")
     Optional<Club> findByIdWithDetails(@Param("id") Integer id);
+
+    long countByStatus(ClubStatus status);
+    long countByVisibility(ClubVisibility visibility);
 }
