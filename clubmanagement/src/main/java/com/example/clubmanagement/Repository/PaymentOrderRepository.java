@@ -13,6 +13,7 @@ import java.util.Optional;
 @Repository
 public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Integer> {
     Optional<PaymentOrder> findByOrderCode(Long orderCode);
+    boolean existsByOrderCode(Long orderCode);
     List<PaymentOrder> findByClubIdOrderByCreatedAtDesc(Integer clubId);
     List<PaymentOrder> findByClubIdAndStatus(Integer clubId, com.example.clubmanagement.Enum.OrderStatus status);
 

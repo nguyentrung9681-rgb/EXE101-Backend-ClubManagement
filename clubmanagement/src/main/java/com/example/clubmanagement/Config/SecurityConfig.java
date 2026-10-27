@@ -111,8 +111,10 @@ public class SecurityConfig {
                                 "/api/google/callback",
                                 "/api/trello/**",
                                 "/api/documents/webhook",
-                                "/api/packages/**",
-                                "/api/payments/**"
+                                // Chi trang goi thu va webhook PayOS duoc phep cong khai,
+                                // vi IPN cua PayOS khong the gui kem JWT cua ngu dung.
+                                "/api/packages",
+                                "/api/payments/payos-webhook"
                         ).permitAll()
                         .requestMatchers("/ws-chat/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")

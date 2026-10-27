@@ -9,6 +9,7 @@ import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.dto.*;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,8 +30,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class PaymentService {
 
@@ -40,6 +43,7 @@ public class PaymentService {
     private final ClubRepository clubRepository;
     private final UserRepository userRepository;
     private final ClubMemberRepository clubMemberRepository;
+    private final EmailService emailService;
     private final PayOS payOS;
 
     @Value("${PAYOS_CLIENT_ID:${payos.client-id:}}")
@@ -57,6 +61,14 @@ public class PaymentService {
     @Value("${payos.cancel-url:https://exe-ebon.vercel.app/payment/cancel}")
     private String cancelUrl;
 
+    /** Endpoint xac nhan thu cong chi duoc mo khi test o local/sandbox. */
+    @Value("${payos.manual-confirm.enabled:false}")
+    private boolean manualConfirmEnabled;
+
+    /** Cho phep tao don hang voi QR gia khi chua co key PayOS (chi dung khi dev). */
+    @Value("${payos.allow-unconfigured-checkout:false}")
+    private boolean allowUnconfiguredCheckout;
+
     public PaymentService(
             SubscriptionPackageRepository packageRepository,
             PaymentOrderRepository orderRepository,
@@ -64,6 +76,7 @@ public class PaymentService {
             ClubRepository clubRepository,
             UserRepository userRepository,
             ClubMemberRepository clubMemberRepository,
+            EmailService emailService,
             PayOS payOS) {
         this.packageRepository = packageRepository;
         this.orderRepository = orderRepository;
@@ -71,6 +84,7 @@ public class PaymentService {
         this.clubRepository = clubRepository;
         this.userRepository = userRepository;
         this.clubMemberRepository = clubMemberRepository;
+        this.emailService = emailService;
         this.payOS = payOS;
     }
 
@@ -83,33 +97,34 @@ public class PaymentService {
     @Transactional
     public PaymentOrderResponse createCheckoutOrder(CreatePaymentRequest request) {
         if (request.getClubId() == null) {
-            throw new RuntimeException("Vui lòng cung cấp mã Câu lạc bộ (clubId) để thanh toán gói dịch vụ.");
+            throw new IllegalArgumentException("Vui lòng cung cấp mã Câu lạc bộ (clubId) để thanh toán gói dịch vụ.");
         }
 
         if (request.getUserId() == null) {
-            throw new RuntimeException("Vui lòng cung cấp mã Người dùng (userId) thực hiện thanh toán.");
+            throw new IllegalArgumentException("Vui lòng cung cấp mã Người dùng (userId) thực hiện thanh toán.");
         }
 
         Club club = clubRepository.findById(request.getClubId())
-                .orElseThrow(() -> new RuntimeException("Câu lạc bộ không tồn tại ID: " + request.getClubId()));
+                .orElseThrow(() -> new IllegalArgumentException("Câu lạc bộ không tồn tại ID: " + request.getClubId()));
 
         User user = userRepository.findById(request.getUserId())
-                .orElseThrow(() -> new RuntimeException("Người dùng không tồn tại ID: " + request.getUserId()));
+                .orElseThrow(() -> new IllegalArgumentException("Người dùng không tồn tại ID: " + request.getUserId()));
 
         // Phân quyền: Chỉ thành viên ACTIVE có vai trò PRESIDENT (Chủ nhiệm) của CLB này mới được phép thanh toán gói
         ClubMember member = clubMemberRepository.findByClubIdAndUserUserIdAndStatus(
                 request.getClubId(), request.getUserId(), ClubMemberStatus.ACTIVE)
-                .orElseThrow(() -> new RuntimeException("Người dùng không phải là thành viên đang hoạt động của câu lạc bộ này!"));
+                .orElseThrow(() -> new SecurityException("Người dùng không phải là thành viên đang hoạt động của câu lạc bộ này!"));
 
         if (member.getRole() != ClubMemberRole.PRESIDENT) {
-            throw new RuntimeException("Chỉ Chủ nhiệm câu lạc bộ (PRESIDENT) mới có quyền thực hiện thanh toán gói dịch vụ!");
+            throw new SecurityException("Chỉ Chủ nhiệm câu lạc bộ (PRESIDENT) mới có quyền thực hiện thanh toán gói dịch vụ!");
         }
 
         SubscriptionPackage pack = packageRepository.findById(request.getPackageId())
-                .orElseThrow(() -> new RuntimeException("Gói dịch vụ không tồn tại ID: " + request.getPackageId()));
+                .orElseThrow(() -> new IllegalArgumentException("Gói dịch vụ không tồn tại ID: " + request.getPackageId()));
 
-        // Sinh mã orderCode kiểu positive Long (unique dựa trên timestamp)
-        long orderCode = System.currentTimeMillis() % 1_000_000_000L;
+        requirePayOsConfigured();
+
+        long orderCode = generateOrderCode();
 
         ItemData item = ItemData.builder()
                 .name(pack.getName())
@@ -139,12 +154,16 @@ public class PaymentService {
             checkoutUrl = data.getCheckoutUrl();
             qrCodeUrl = data.getQrCode();
         } catch (Exception e) {
-            System.err.println("Lỗi gọi PayOS API: " + e.getMessage());
-            // Fallback khi chưa cấu hình PayOS Key thật hoặc chạy môi trường dev local
+            log.error("Lỗi gọi PayOS API khi tạo link thanh toán cho đơn {}: {}", orderCode, e.getMessage());
+            if (!allowUnconfiguredCheckout) {
+                throw new IllegalStateException(
+                        "Không tạo được link thanh toán PayOS. Vui lòng thử lại sau hoặc liên hệ hỗ trợ.");
+            }
+            // Chi dung khi dev local: PayOS that khong the thanh toan duoc.
             checkoutUrl = returnUrl + "?orderCode=" + orderCode;
-            qrCodeUrl = "https://img.vietqr.io/image/MB-0987654321-compact2.png?amount=" 
-                    + pack.getPrice().longValue() 
-                    + "&addInfo=PAY" + orderCode 
+            qrCodeUrl = "https://img.vietqr.io/image/MB-0987654321-compact2.png?amount="
+                    + pack.getPrice().longValue()
+                    + "&addInfo=PAY" + orderCode
                     + "&accountName=EXE101%20CLUB%20MANAGEMENT";
         }
 
@@ -166,21 +185,25 @@ public class PaymentService {
 
     @Transactional
     public PaymentOrderResponse processWebhook(Webhook webhook) {
+        if (webhook == null || webhook.getData() == null) {
+            throw new IllegalArgumentException("Dữ liệu Webhook không hợp lệ!");
+        }
+
         WebhookData webhookData;
         try {
             webhookData = payOS.verifyPaymentWebhookData(webhook);
         } catch (Exception e) {
-            // Fallback nếu không verify được checksum (chẳng hạn gọi manual hoặc test endpoint)
-            webhookData = webhook.getData();
+            log.warn("Từ chối webhook PayOS: checksum không hợp lệ cho đơn {}", webhook.getData().getOrderCode());
+            throw new SecurityException("Chữ ký webhook PayOS không hợp lệ - yêu cầu bị từ chối.");
         }
 
-        if (webhookData == null) {
-            throw new RuntimeException("Dữ liệu Webhook không hợp lệ!");
+        if (webhookData == null || webhookData.getOrderCode() == null) {
+            throw new IllegalArgumentException("Dữ liệu Webhook không hợp lệ!");
         }
 
         Long orderCode = webhookData.getOrderCode();
         PaymentOrder order = orderRepository.findByOrderCode(orderCode)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng mã: " + orderCode));
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng mã: " + orderCode));
 
         // Kiểm tra Idempotency - Tránh xử lý trùng lặp
         if (order.getStatus() == OrderStatus.PAID) {
@@ -188,15 +211,8 @@ public class PaymentService {
         }
 
         if ("00".equals(webhookData.getCode())) { // 00 là mã thành công từ PayOS
-            order.setStatus(OrderStatus.PAID);
-            order.setPaidAt(LocalDateTime.now());
-            order.setTransactionNo(webhookData.getReference());
-            orderRepository.save(order);
-
-            // Kích hoạt/gia hạn gói cho CLB nếu đơn hàng gắn với CLB
-            if (order.getClub() != null) {
-                activateClubSubscription(order);
-            }
+            verifyPaidAmount(order, webhookData);
+            markOrderPaid(order, webhookData.getReference());
         } else {
             order.setStatus(OrderStatus.CANCELLED);
             order.setCancelledAt(LocalDateTime.now());
@@ -206,36 +222,85 @@ public class PaymentService {
         return mapOrderToResponse(order);
     }
 
+    /**
+     * Webhook da duoc kiem chu ky o tren; loi nay chac chan don thanh toan that
+     * (khong phai payload gia mao ghi de don dang cho).
+     */
+    private void verifyPaidAmount(PaymentOrder order, WebhookData data) {
+        if (data.getAmount() == null) {
+            throw new SecurityException("Webhook thiếu số tiền giao dịch, không xác nhận đơn " + order.getOrderCode());
+        }
+        int expected = order.getAmount().intValue();
+        if (data.getAmount() != expected) {
+            log.error("Từ chối webhook: số tiền {} không khớp đơn {} (kỳ vọng {})",
+                    data.getAmount(), order.getOrderCode(), expected);
+            throw new SecurityException("Số tiền trong webhook không khớp đơn hàng.");
+        }
+        if (data.getCurrency() != null && !"VND".equalsIgnoreCase(data.getCurrency())) {
+            throw new SecurityException("Đơn vị tiền tệ trong webhook không hợp lệ.");
+        }
+    }
+
+    /** Duong dan duy nhat chuyen mot don sang PAID: luu tran, kich hoat goi, gui email xac nhan. */
+    private void markOrderPaid(PaymentOrder order, String reference) {
+        order.setStatus(OrderStatus.PAID);
+        order.setPaidAt(LocalDateTime.now());
+        order.setTransactionNo(reference != null && !reference.isBlank()
+                ? reference
+                : "PAYOS_" + order.getOrderCode());
+        orderRepository.save(order);
+
+        ClubSubscription subscription = order.getClub() != null ? activateClubSubscription(order) : null;
+        sendOrderConfirmation(order, subscription);
+    }
+
+    /** Chi chinh chu don hang hoac Chu nhiem CLB cua don duoc phep thao tac tren don. */
+    private void requireOrderAccess(PaymentOrder order, Integer currentUserId) {
+        if (currentUserId == null) {
+            throw new SecurityException("Yêu cầu không được xác thực! Vui lòng cung cấp JWT Token hợp lệ.");
+        }
+        if (order.getUser() != null && currentUserId.equals(order.getUser().getUserId())) {
+            return;
+        }
+        if (order.getClub() != null && clubMemberRepository.findByClubIdAndUserUserIdAndStatus(
+                        order.getClub().getId(), currentUserId, ClubMemberStatus.ACTIVE)
+                .map(m -> m.getRole() == ClubMemberRole.PRESIDENT)
+                .orElse(false)) {
+            return;
+        }
+        throw new SecurityException("Bạn không có quyền thao tác trên đơn hàng này!");
+    }
+
     @Transactional
-    public PaymentOrderResponse confirmOrderManual(Long orderCode) {
+    public PaymentOrderResponse confirmOrderManual(Long orderCode, Integer currentUserId) {
+        if (!manualConfirmEnabled) {
+            throw new SecurityException("Xác nhận thủ công đã bị vô hiệu hoá ở môi trường này. "
+                    + "Đơn hàng chỉ được xác nhận qua webhook PayOS.");
+        }
+
         PaymentOrder order = orderRepository.findByOrderCode(orderCode)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng mã: " + orderCode));
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng mã: " + orderCode));
+        requireOrderAccess(order, currentUserId);
 
         if (order.getStatus() == OrderStatus.PAID) {
             return mapOrderToResponse(order);
         }
 
-        order.setStatus(OrderStatus.PAID);
-        order.setPaidAt(LocalDateTime.now());
-        order.setTransactionNo("MANUAL_" + System.currentTimeMillis());
-        orderRepository.save(order);
-
-        if (order.getClub() != null) {
-            activateClubSubscription(order);
-        }
-
+        markOrderPaid(order, "MANUAL_" + System.currentTimeMillis());
         return mapOrderToResponse(order);
     }
 
     @Transactional
-    public PaymentOrderResponse cancelOrder(Long orderCode) {
+    public PaymentOrderResponse cancelOrder(Long orderCode, Integer currentUserId) {
         PaymentOrder order = orderRepository.findByOrderCode(orderCode)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng mã: " + orderCode));
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng mã: " + orderCode));
+        requireOrderAccess(order, currentUserId);
 
         if (order.getStatus() == OrderStatus.PENDING) {
             try {
                 payOS.cancelPaymentLink(orderCode, "Người dùng hủy giao dịch");
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.warn("Không hủy được link thanh toán PayOS cho đơn {}: {}", orderCode, e.getMessage());
             }
             order.setStatus(OrderStatus.CANCELLED);
             order.setCancelledAt(LocalDateTime.now());
@@ -246,9 +311,10 @@ public class PaymentService {
     }
 
     @Transactional
-    public PaymentOrderResponse getOrderByCode(Long orderCode) {
+    public PaymentOrderResponse getOrderByCode(Long orderCode, Integer currentUserId) {
         PaymentOrder order = orderRepository.findByOrderCode(orderCode)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng mã: " + orderCode));
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng mã: " + orderCode));
+        requireOrderAccess(order, currentUserId);
         if (order.getStatus() == OrderStatus.PENDING) {
             syncOrderWithPayOS(order);
         }
@@ -297,17 +363,11 @@ public class PaymentService {
             if (paymentLinkData != null) {
                 String statusStr = paymentLinkData.getStatus();
                 if ("PAID".equalsIgnoreCase(statusStr)) {
-                    order.setStatus(OrderStatus.PAID);
-                    order.setPaidAt(LocalDateTime.now());
-                    if (paymentLinkData.getTransactions() != null && !paymentLinkData.getTransactions().isEmpty()) {
-                        order.setTransactionNo(paymentLinkData.getTransactions().get(0).getReference());
-                    } else {
-                        order.setTransactionNo("PAYOS_" + order.getOrderCode());
-                    }
-                    orderRepository.save(order);
-                    if (order.getClub() != null) {
-                        activateClubSubscription(order);
-                    }
+                    String reference = paymentLinkData.getTransactions() != null
+                            && !paymentLinkData.getTransactions().isEmpty()
+                            ? paymentLinkData.getTransactions().get(0).getReference()
+                            : null;
+                    markOrderPaid(order, reference);
                     return true;
                 } else if ("CANCELLED".equalsIgnoreCase(statusStr)) {
                     order.setStatus(OrderStatus.CANCELLED);
@@ -316,12 +376,13 @@ public class PaymentService {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Không thể tự động đồng bộ đơn hàng " + order.getOrderCode() + " từ PayOS API: " + e.getMessage());
+            log.warn("Không thể tự động đồng bộ đơn hàng {} từ PayOS API: {}",
+                    order.getOrderCode(), e.getMessage());
         }
         return false;
     }
 
-    private void activateClubSubscription(PaymentOrder order) {
+    private ClubSubscription activateClubSubscription(PaymentOrder order) {
         Club club = order.getClub();
         SubscriptionPackage pack = order.getSubscriptionPackage();
 
@@ -350,6 +411,60 @@ public class PaymentService {
                 .build();
 
         subscriptionRepository.save(subscription);
+        return subscription;
+    }
+
+    /**
+     * Gui hoa don xac nhan den khach hang. Email duoc gui bat dong bo va loi gui
+     * khong duoc lam hong giao dich thanh toan.
+     */
+    private void sendOrderConfirmation(PaymentOrder order, ClubSubscription subscription) {
+        User buyer = order.getUser();
+        if (buyer == null || buyer.getEmail() == null || buyer.getEmail().isBlank()) {
+            log.warn("Bỏ qua email xác nhận đơn {}: người mua không có email", order.getOrderCode());
+            return;
+        }
+        try {
+            emailService.sendOrderConfirmationEmail(
+                    buyer.getEmail(),
+                    buyer.getFullName(),
+                    order.getOrderCode(),
+                    order.getSubscriptionPackage().getName(),
+                    order.getAmount(),
+                    order.getClub() != null ? order.getClub().getName() : null,
+                    order.getPaymentMethod(),
+                    order.getTransactionNo(),
+                    order.getPaidAt(),
+                    subscription != null ? subscription.getEndDate() : null);
+        } catch (Exception e) {
+            log.error("Không gửi được email xác nhận đơn {}: {}", order.getOrderCode(), e.getMessage());
+        }
+    }
+
+    private void requirePayOsConfigured() {
+        if (isPayOsConfigured() || allowUnconfiguredCheckout) {
+            return;
+        }
+        log.error("Không thể tạo link thanh toán: thiếu PAYOS_CLIENT_ID / PAYOS_API_KEY / PAYOS_CHECKSUM_KEY");
+        throw new IllegalStateException("Hệ thống thanh toán chưa được kích hoạt, vui lòng liên hệ hỗ trợ.");
+    }
+
+    private boolean isPayOsConfigured() {
+        return clientId != null && !clientId.isBlank()
+                && apiKey != null && !apiKey.isBlank()
+                && checksumKey != null && !checksumKey.isBlank();
+    }
+
+    /** Ma don dua tren timestamp nen hai don tao cung luc co the trung nhau. */
+    private long generateOrderCode() {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            long candidate = System.currentTimeMillis() % 1_000_000_000L
+                    + ThreadLocalRandom.current().nextInt(1000);
+            if (candidate > 0 && !orderRepository.existsByOrderCode(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("Không sinh được mã đơn hàng, vui lòng thử lại");
     }
 
     private SubscriptionPackageResponse mapPackageToResponse(SubscriptionPackage pack) {
