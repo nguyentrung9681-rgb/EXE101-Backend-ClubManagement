@@ -14,7 +14,6 @@ public interface ClubEventRepository extends JpaRepository<ClubEvent, Integer> {
     List<ClubEvent> findByClubId(Integer clubId);
     List<ClubEvent> findByStartTimeBetween(LocalDateTime start, LocalDateTime end);
     List<ClubEvent> findByClubIdAndStartTimeBetween(Integer clubId, LocalDateTime start, LocalDateTime end);
-<<<<<<< HEAD
 
     @Query("SELECT e FROM ClubEvent e " +
             "LEFT JOIN FETCH e.createdBy LEFT JOIN FETCH e.club " +
