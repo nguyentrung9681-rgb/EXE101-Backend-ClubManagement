@@ -99,6 +99,11 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // Sau khi controller nem exception, container forward toi /error (DispatcherType.ERROR).
+                        // Neu /error cung bi bat buoc JWT thi loi that bi che thanh 401 kho hieu.
+                        .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR,
+                                jakarta.servlet.DispatcherType.FORWARD,
+                                jakarta.servlet.DispatcherType.ASYNC).permitAll()
                         .requestMatchers(
                                 "/health",
                                 "/api/health",
@@ -117,7 +122,8 @@ public class SecurityConfig {
                                 "/api/payments/payos-webhook"
                         ).permitAll()
                         .requestMatchers("/ws-chat/**").permitAll()
-                        .requestMatchers("/api/admin/**", "/api/dashboard/**").authenticated()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/dashboard/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(rateLimitingFilter, LogoutFilter.class)

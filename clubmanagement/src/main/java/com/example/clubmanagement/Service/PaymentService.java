@@ -202,8 +202,13 @@ public class PaymentService {
         }
 
         Long orderCode = webhookData.getOrderCode();
-        PaymentOrder order = orderRepository.findByOrderCode(orderCode)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng mã: " + orderCode));
+        PaymentOrder order = orderRepository.findByOrderCode(orderCode).orElse(null);
+        if (order == null) {
+            // PayOS dung chinh mau IPN trong tai lieu (don 123) de kiem tra Webhook Url.
+            // Chu ky da hop le o tren, nen ACK 200 de PayOS ghi nhan endpoint hoat dong.
+            log.warn("Webhook PayOS co chu ky hop le nhung khong tim thay don {} - bo qua", orderCode);
+            return null;
+        }
 
         // Kiểm tra Idempotency - Tránh xử lý trùng lặp
         if (order.getStatus() == OrderStatus.PAID) {

@@ -22,10 +22,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider tokenProvider;
     private final UserRepository userRepository;
+    private final java.util.Set<String> adminEmails;
 
-    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider, UserRepository userRepository) {
+    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider,
+                                  UserRepository userRepository,
+                                  @org.springframework.beans.factory.annotation.Value("${app.admin-emails:}") String adminEmailsCsv) {
         this.tokenProvider = tokenProvider;
         this.userRepository = userRepository;
+        this.adminEmails = java.util.Arrays.stream(adminEmailsCsv.split(","))
+                .map(String::trim)
+                .map(s -> s.toLowerCase(java.util.Locale.ROOT))
+                .filter(s -> !s.isEmpty())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private boolean isAdmin(User user) {
+        if (adminEmails.isEmpty()) {
+            return false;
+        }
+        return (user.getEmail() != null && adminEmails.contains(user.getEmail().toLowerCase(java.util.Locale.ROOT)))
+                || (user.getUsername() != null && adminEmails.contains(user.getUsername().toLowerCase(java.util.Locale.ROOT)));
     }
 
     @Override
@@ -43,10 +59,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         .orElse(null);
 
                 if (user != null && !"BANNED".equals(user.getUserStatus()) && !"INACTIVE".equals(user.getUserStatus())) {
-                    java.util.List<SimpleGrantedAuthority> authorities = java.util.List.of(
-                            new SimpleGrantedAuthority("ROLE_USER"),
-                            new SimpleGrantedAuthority("ROLE_ADMIN")
-                    );
+                    java.util.List<SimpleGrantedAuthority> authorities = isAdmin(user)
+                            ? java.util.List.of(
+                                    new SimpleGrantedAuthority("ROLE_USER"),
+                                    new SimpleGrantedAuthority("ROLE_ADMIN"))
+                            : java.util.List.of(
+                                    new SimpleGrantedAuthority("ROLE_USER"));
                     UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                             user, null, authorities);
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
