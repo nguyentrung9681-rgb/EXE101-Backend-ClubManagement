@@ -195,7 +195,7 @@ public class EmailService {
             return;
         }
 
-        log.warn("Chưa cấu hình MAILJET_API_KEY, BREVO_API_KEY, RESEND_API_KEY hoặc SPRING_MAIL_USERNAME. "
+        log.error("Chưa cấu hình MAILJET_API_KEY, BREVO_API_KEY, RESEND_API_KEY hoặc SPRING_MAIL_USERNAME. "
                 + "Email '{}' tới {} chưa được gửi đi.", subject, toEmail);
     }
 

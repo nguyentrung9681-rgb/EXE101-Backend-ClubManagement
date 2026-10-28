@@ -27,5 +27,10 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Inte
     @Query("SELECT p FROM PaymentOrder p WHERE p.user.userId = :userId ORDER BY p.createdAt DESC")
     List<PaymentOrder> findByUserIdOrderByCreatedAtDesc(@Param("userId") Integer userId);
 
+    List<PaymentOrder> findByCreatedAtBetween(LocalDateTime from, LocalDateTime to);
+
+    List<PaymentOrder> findByStatusAndPaidAtBetween(
+            com.example.clubmanagement.Enum.OrderStatus status, LocalDateTime from, LocalDateTime to);
+
     void deleteByClubId(Integer clubId);
 }

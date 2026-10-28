@@ -9,20 +9,22 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import vn.payos.type.Webhook;
 
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
+@lombok.extern.slf4j.Slf4j
 @Tag(name = "Payment & Subscription", description = "APIs quản lý gói dịch vụ và thanh toán qua VietQR (PayOS)")
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final tools.jackson.databind.ObjectMapper objectMapper;
 
-    public PaymentController(PaymentService paymentService) {
+    public PaymentController(PaymentService paymentService, tools.jackson.databind.ObjectMapper objectMapper) {
         this.paymentService = paymentService;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping("/packages")
@@ -58,14 +60,52 @@ public class PaymentController {
         }
     }
 
-    @PostMapping("/payments/payos-webhook")
+    @PostMapping(value = "/payments/payos-webhook", consumes = org.springframework.http.MediaType.ALL_VALUE)
     @Operation(summary = "Webhook (IPN) nhận thông báo thanh toán tự động từ PayOS")
-    public ResponseEntity<?> handlePayOSWebhook(@RequestBody Webhook webhookData) {
+    public ResponseEntity<?> handlePayOSWebhook(@RequestBody(required = false) String rawBody) {
         try {
-            return ResponseEntity.ok(paymentService.processWebhook(webhookData));
+            log.info("PayOS goi webhook (len={}): {}",
+                    rawBody == null ? 0 : rawBody.length(),
+                    preview(rawBody));
+
+            vn.payos.type.Webhook webhook = toWebhook(rawBody);
+            if (webhook == null) {
+                // PayOS chi Ping kiem tra URL truoc khi cho phep luu Webhook Url.
+                // Payload nay khong co noi dung don hang nen khong xuyen qua duoc viec kiem chu ky.
+                return ResponseEntity.ok(webhookAck());
+            }
+            PaymentOrderResponse processed = paymentService.processWebhook(webhook);
+            return ResponseEntity.ok(processed == null ? webhookAck() : processed);
         } catch (Exception e) {
             return errorEntity(e);
         }
+    }
+
+    private static Map<String, String> webhookAck() {
+        return Map.of("code", "00", "message", "S-Club webhook endpoint is ready");
+    }
+
+    private vn.payos.type.Webhook toWebhook(String rawBody) {
+        if (rawBody == null) {
+            return null;
+        }
+        int start = rawBody.indexOf('{');
+        if (start < 0) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(rawBody.substring(start), PayOSWebhookRequest.class).toWebhook();
+        } catch (Exception e) {
+            log.warn("Khong doc duoc JSON webhook cua PayOS: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String preview(String rawBody) {
+        if (rawBody == null) {
+            return "null";
+        }
+        return rawBody.length() <= 600 ? rawBody : rawBody.substring(0, 600) + "...";
     }
 
     @GetMapping("/payments/order/{orderCode}")

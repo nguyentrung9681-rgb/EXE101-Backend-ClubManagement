@@ -23,6 +23,7 @@ public class AuthService {
     private final JwtTokenProvider tokenProvider;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailService emailService;
+    private final AnalyticsService analyticsService;
 
     @Value("${app.frontend.redirect-url:https://exe-ebon.vercel.app}")
     private String frontendUrl;
@@ -32,13 +33,15 @@ public class AuthService {
                        PasswordEncoder passwordEncoder,
                        JwtTokenProvider tokenProvider,
                        PasswordResetTokenRepository passwordResetTokenRepository,
-                       EmailService emailService) {
+                       EmailService emailService,
+                       AnalyticsService analyticsService) {
         this.userRepository = userRepository;
         this.userSettingRepository = userSettingRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.emailService = emailService;
+        this.analyticsService = analyticsService;
     }
 
     @Transactional
@@ -77,6 +80,9 @@ public class AuthService {
         UserSetting setting = new UserSetting();
         setting.setUserId(savedUser.getUserId());
         userSettingRepository.save(setting);
+
+        analyticsService.recordQuiet(AnalyticsService.SIGNUP, savedUser.getUserId(),
+                null, null, null, null, null, null);
 
         return "Đăng ký thành công!";
     }
@@ -153,6 +159,9 @@ public class AuthService {
             UserSetting setting = new UserSetting();
             setting.setUserId(user.getUserId());
             userSettingRepository.save(setting);
+
+            analyticsService.recordQuiet(AnalyticsService.SIGNUP, user.getUserId(),
+                    null, null, null, null, null, null);
         } else {
             boolean updated = false;
             if (user.getGoogleId() == null && googleId != null) {

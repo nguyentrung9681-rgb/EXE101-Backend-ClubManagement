@@ -44,6 +44,7 @@ public class PaymentService {
     private final UserRepository userRepository;
     private final ClubMemberRepository clubMemberRepository;
     private final EmailService emailService;
+    private final AnalyticsService analyticsService;
     private final PayOS payOS;
 
     @Value("${PAYOS_CLIENT_ID:${payos.client-id:}}")
@@ -77,6 +78,7 @@ public class PaymentService {
             UserRepository userRepository,
             ClubMemberRepository clubMemberRepository,
             EmailService emailService,
+            AnalyticsService analyticsService,
             PayOS payOS) {
         this.packageRepository = packageRepository;
         this.orderRepository = orderRepository;
@@ -85,6 +87,7 @@ public class PaymentService {
         this.userRepository = userRepository;
         this.clubMemberRepository = clubMemberRepository;
         this.emailService = emailService;
+        this.analyticsService = analyticsService;
         this.payOS = payOS;
     }
 
@@ -180,6 +183,10 @@ public class PaymentService {
                 .build();
 
         PaymentOrder saved = orderRepository.save(order);
+
+        analyticsService.recordQuiet(AnalyticsService.CHECKOUT_START, user.getUserId(), club.getId(),
+                saved.getOrderCode(), saved.getAmount(), null, null, null);
+
         return mapOrderToResponse(saved);
     }
 
@@ -202,8 +209,13 @@ public class PaymentService {
         }
 
         Long orderCode = webhookData.getOrderCode();
-        PaymentOrder order = orderRepository.findByOrderCode(orderCode)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng mã: " + orderCode));
+        PaymentOrder order = orderRepository.findByOrderCode(orderCode).orElse(null);
+        if (order == null) {
+            // PayOS dung chinh mau IPN trong tai lieu (don 123) de kiem tra Webhook Url.
+            // Chu ky da hop le o tren, nen ACK 200 de PayOS ghi nhan endpoint hoat dong.
+            log.warn("Webhook PayOS co chu ky hop le nhung khong tim thay don {} - bo qua", orderCode);
+            return null;
+        }
 
         // Kiểm tra Idempotency - Tránh xử lý trùng lặp
         if (order.getStatus() == OrderStatus.PAID) {
@@ -252,6 +264,11 @@ public class PaymentService {
 
         ClubSubscription subscription = order.getClub() != null ? activateClubSubscription(order) : null;
         sendOrderConfirmation(order, subscription);
+
+        Integer buyerId = order.getUser() != null ? order.getUser().getUserId() : null;
+        Integer paidClubId = order.getClub() != null ? order.getClub().getId() : null;
+        analyticsService.recordQuiet(AnalyticsService.PAYMENT_SUCCESS, buyerId, paidClubId,
+                order.getOrderCode(), order.getAmount(), null, null, null);
     }
 
     /** Chi chinh chu don hang hoac Chu nhiem CLB cua don duoc phep thao tac tren don. */

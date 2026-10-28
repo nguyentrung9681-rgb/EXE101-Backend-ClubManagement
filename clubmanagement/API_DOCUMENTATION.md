@@ -561,3 +561,104 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
   "status": "ACTIVE"
 }
 ```
+
+---
+
+### 3.8. PHÂN TÍCH & ĐO LƯỜNG PHỄU CHUYỂN ĐỔI (ANALYTICS)
+
+ Backend đã tự động ghi nhận 3 bước `signup`, `checkout_start`, `payment_success`.
+ Frontend chỉ cần gửi 2 bước còn lại: `page_view` và `pricing_view`.
+
+#### 3.8.1. Gửi sự kiện người dùng (public, không cần JWT)
+* **URL:** `/api/analytics/events`
+* **Method:** `POST`
+* **Request Body:**
+```json
+{
+  "eventName": "pricing_view",
+  "sessionId": "8f2c9b3a-1e57-4d0c-9f4a-2b6d7c1e0a55",
+  "path": "/pricing?utm_source=facebook&utm_medium=cpc&utm_campaign=oct2026",
+  "referrer": "https://www.facebook.com/",
+  "utmSource": "facebook",
+  "utmMedium": "cpc",
+  "utmCampaign": "oct2026",
+  "utmContent": "banner-01"
+}
+```
+* **Quy tắc tham số:**
+  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `eventName` | `String` | Có | Chỉ chữ thường, số, `_`, độ dài 2–60. Giá trị hợp lệ: `page_view`, `pricing_view` (2 sự kiện FE phải gửi) |
+  | `sessionId` | `String` | Nên có | Mã định danh khách truy cập, lưu `localStorage`, dùng để đếm **visitor** (không trùng lặp) |
+  | `path` | `String` | Không | Đường dẫn trang, tối đa 512 ký tự |
+  | `referrer` | `String` | Không | Trang giới thiệu, tối đa 512 ký tự |
+  | `utmSource` | `String` | Nên có | `facebook`, `tiktok`, `google`, `zalo`… — **bắt buộc nếu muốn báo cáo theo kênh mạng xã hội** |
+  | `utmMedium` | `String` | Không | `cpc`, `social`, `organic`, `posting`… |
+  | `utmCampaign` | `String` | Không | Tên chiến dịch |
+  | `utmContent` | `String` | Không | Phiên bản nội dung quảng cáo |
+
+* **Response (200 OK):**
+```json
+{"status": "recorded"}
+```
+Sự kiện sai định dạng (`eventName` chứa ký tự không hợp lệ) trả `400` kèm `{"message": "..."}`. FE nên gửi kiểu "fire-and-forget" (không chặn UI, không hiển thị lỗi).
+* **Gợi ý triển khai FE:** gọi ngay khi trang tải, lấy `utm_*` từ `URLSearchParams` của lượt truy cập **đầu tiên** và lưu lại để các trang sau vẫn attribution đúng.
+
+#### 3.8.2. Báo cáo phễu chuyển đổi + KPI doanh thu cho trang quản trị
+* **URL:** `/api/admin/analytics`
+* **Method:** `GET`
+* **Yêu cầu xác thực:** `Bearer` token của tài khoản ADMIN
+* **Query Parameters:**
+  | Tên tham số | Kiểu dữ liệu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `days` | `Integer` | Không | Số ngày gần nhất, mặc định 30, giới hạn 1–365 (dùng 365 để vẽ biểu đồ cả năm) |
+* **Response (200 OK):**
+```json
+{
+  "days": 30,
+  "from": "2026-09-28T17:10:00",
+  "to": "2026-10-28T17:10:00",
+  "totals": {
+    "trackedEvents": 482,
+    "visitors": 139,
+    "newUsers": 41,
+    "checkouts": 18,
+    "paidOrders": 12,
+    "revenue": 1200000.00
+  },
+  "funnel": [
+    {"step": "page_view", "label": "Lượt xem trang", "unit": "visitor", "count": 139, "conversionFromPrevious": null, "conversionFromStart": 100.0},
+    {"step": "pricing_view", "label": "Xem bảng giá gói dịch vụ", "unit": "visitor", "count": 62, "conversionFromPrevious": 44.6, "conversionFromStart": 44.6},
+    {"step": "signup", "label": "Đăng ký tài khoản mới", "unit": "user", "count": 41, "conversionFromPrevious": 66.1, "conversionFromStart": 29.5},
+    {"step": "checkout_start", "label": "Bắt đầu thanh toán (tạo đơn)", "unit": "order", "count": 18, "conversionFromPrevious": 43.9, "conversionFromStart": 12.9},
+    {"step": "payment_success", "label": "Thanh toán thành công", "unit": "order", "count": 12, "conversionFromPrevious": 66.7, "conversionFromStart": 8.6}
+  ],
+  "channels": [
+    {"source": "facebook", "medium": "cpc", "visitors": 74, "checkouts": 11, "paidOrders": 8, "revenue": 800000.00},
+    {"source": "tiktok", "medium": "organic", "visitors": 31, "checkouts": 5, "paidOrders": 3, "revenue": 300000.00}
+  ],
+  "revenue": {
+    "weekly":  {"label": "7 ngày gần nhất", "from": "2026-10-21T17:10:00", "to": "2026-10-28T17:10:00", "amount": 297000.00, "paidOrders": 3, "previousAmount": 198000.00, "growthPercent": 50.00},
+    "monthly": {"label": "30 ngày gần nhất", "from": "2026-09-28T17:10:00", "to": "2026-10-28T17:10:00", "amount": 1200000.00, "paidOrders": 12, "previousAmount": 900000.00, "growthPercent": 33.33},
+    "yearly":  {"label": "Năm hiện tại", "from": "2026-01-01T00:00:00", "to": "2026-10-28T17:10:00", "amount": 8900000.00, "paidOrders": 89, "previousAmount": 0.00, "growthPercent": null},
+    "period":  {"label": "Trong khoảng đang xem", "from": "2026-09-28T17:10:00", "to": "2026-10-28T17:10:00", "amount": 1200000.00, "paidOrders": 12, "previousAmount": 900000.00, "growthPercent": 33.33}
+  },
+  "revenueTrend": [
+    {"bucket": "2026-10-21", "label": "21/10", "amount": 0.00, "paidOrders": 0},
+    {"bucket": "2026-10-22", "label": "22/10", "amount": 99000.00, "paidOrders": 1}
+  ],
+  "trendGranularity": "DAY",
+  "subscriptions": {
+    "activeMonthly": 14,
+    "activeYearly": 3,
+    "totalActive": 17,
+    "expiringIn30Days": 9,
+    "payingUsers": 16
+  }
+}
+```
+* **Ghi chú:** `unit` cho biết đơn vị đếm của từng bước (`visitor` / `user` / `order`), UI cần hiển thị chú thích tương ứng. `channels` dùng mô hình **first-touch**: đơn hàng được quy cho kênh UTM mà người dùng nhìn thấy đầu tiên.
+* **Bảng KPI doanh thu** (`revenue`) luôn tính theo `paid_at` của đơn `PAID` với cửa sổ cố định (7 ngày / 30 ngày / từ 01/01 năm nay), **không** phụ thuộc tham số `days`; chỉ có `period` là bám theo cửa sổ request. `growthPercent` so với kỳ liền trước có cùng độ dài, và trả `null` khi kỳ trước = 0đ (UI nên hiển thị "—").
+* **Biểu đồ dòng tiền** (`revenueTrend`): `trendGranularity = "DAY"` khi khoảng xem ≤ 62 ngày (mỗi điểm một ngày, `bucket` dạng `2026-10-21`), ngược lại `"MONTH"` (`bucket` dạng `2026-09`). Các bucket trống vẫn được trả về với `amount: 0` để vẽ liên tục.
+* **Gói tháng / gói năm** (`subscriptions`): phân loại theo `durationDays` của gói (≥ 300 ngày = gói năm), chỉ đếm subscription `status = ACTIVE`. `expiringIn30Days` là số gói sắp hết hạn trong 30 ngày tới, `payingUsers` là số user đã thanh toán tạo ra các gói đang hiệu lực đó.
+* **Không có số liệu voucher/giảm giá:** hệ thống hiện không có bảng hay cột `discount` nào (xem lại mục 9 trong bảng chức năng), nên backend không thể thống kê. Nếu cần, phải làm tính năng voucher trước.

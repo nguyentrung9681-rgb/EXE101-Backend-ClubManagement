@@ -3,6 +3,8 @@ package com.example.clubmanagement.Repository;
 import com.example.clubmanagement.Entity.User;
 import com.example.clubmanagement.Enum.SystemRole;
 import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Integer> {
@@ -24,4 +26,6 @@ public interface UserRepository extends JpaRepository<User, Integer> {
     boolean existsByRole(SystemRole role);
 
     long countByRole(SystemRole role);
+
+    long countByCreatedAtBetween(LocalDateTime from, LocalDateTime to);
 }
