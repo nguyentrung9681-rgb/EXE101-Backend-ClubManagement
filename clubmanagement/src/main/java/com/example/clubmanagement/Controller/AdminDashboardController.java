@@ -1,5 +1,6 @@
 package com.example.clubmanagement.Controller;
 
+import com.example.clubmanagement.Enum.SystemRole;
 import com.example.clubmanagement.Service.AdminDashboardService;
 import com.example.clubmanagement.dto.AdminClubResponse;
 import com.example.clubmanagement.dto.AdminDashboardOverviewResponse;
@@ -81,6 +82,38 @@ public class AdminDashboardController {
         try {
             List<AdminClubResponse> clubs = adminDashboardService.getAllClubs(search, status, visibility);
             return ResponseEntity.ok(clubs);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Cập nhật vai trò hệ thống của người dùng (USER / ADMIN).
+     * PATCH /api/admin/users/{userId}/role
+     */
+    @PatchMapping("/users/{userId}/role")
+    @Operation(summary = "Cập nhật vai trò người dùng (USER / ADMIN)", description = "Chỉ tài khoản Admin mới có quyền thực hiện")
+    public ResponseEntity<?> updateUserRole(
+            @Parameter(description = "ID của người dùng cần đổi vai trò")
+            @PathVariable Integer userId,
+            @RequestBody Map<String, String> request) {
+        try {
+            String roleStr = request.get("role");
+            if (roleStr == null || roleStr.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Vui lòng cung cấp trường 'role' (USER hoặc ADMIN)!"));
+            }
+            SystemRole newRole;
+            try {
+                newRole = SystemRole.valueOf(roleStr.trim().toUpperCase());
+            } catch (IllegalArgumentException ex) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Vai trò không hợp lệ! Chỉ chấp nhận: USER hoặc ADMIN."));
+            }
+            adminDashboardService.updateUserRole(userId, newRole);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Cập nhật vai trò người dùng thành công!",
+                    "userId", userId,
+                    "newRole", newRole.name()
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

@@ -43,10 +43,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         .orElse(null);
 
                 if (user != null && !"BANNED".equals(user.getUserStatus()) && !"INACTIVE".equals(user.getUserStatus())) {
-                    java.util.List<SimpleGrantedAuthority> authorities = java.util.List.of(
-                            new SimpleGrantedAuthority("ROLE_USER"),
-                            new SimpleGrantedAuthority("ROLE_ADMIN")
-                    );
+                    java.util.List<SimpleGrantedAuthority> authorities;
+                    if (user.getRole() == com.example.clubmanagement.Enum.SystemRole.ADMIN) {
+                        authorities = java.util.List.of(
+                                new SimpleGrantedAuthority("ROLE_ADMIN"),
+                                new SimpleGrantedAuthority("ROLE_USER")
+                        );
+                    } else {
+                        authorities = java.util.List.of(
+                                new SimpleGrantedAuthority("ROLE_USER")
+                        );
+                    }
                     UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                             user, null, authorities);
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

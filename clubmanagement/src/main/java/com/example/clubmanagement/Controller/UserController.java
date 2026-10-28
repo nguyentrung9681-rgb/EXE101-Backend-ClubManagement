@@ -34,7 +34,10 @@ public class UserController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String authProvider) {
         try {
+            SecurityUtils.validateAdminPermission();
             return ResponseEntity.ok(adminDashboardService.getAllUsers(search, status, authProvider));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

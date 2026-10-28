@@ -1,5 +1,6 @@
 package com.example.clubmanagement.Entity;
 
+import com.example.clubmanagement.Enum.SystemRole;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
@@ -26,6 +27,11 @@ public class User {
 
     private String userStatus; // 'ACTIVE', 'INACTIVE', 'BANNED'
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", length = 20, nullable = false)
+    @Builder.Default
+    private SystemRole role = SystemRole.USER;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -34,5 +40,12 @@ public class User {
         createdAt = LocalDateTime.now();
         if (userStatus == null) userStatus = "ACTIVE";
         if (authProvider == null) authProvider = "LOCAL";
+        if (role == null) role = SystemRole.USER;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+        if (role == null) role = SystemRole.USER;
     }
 }

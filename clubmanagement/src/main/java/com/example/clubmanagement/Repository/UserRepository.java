@@ -1,6 +1,7 @@
 package com.example.clubmanagement.Repository;
 
 import com.example.clubmanagement.Entity.User;
+import com.example.clubmanagement.Enum.SystemRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 
@@ -19,4 +20,8 @@ public interface UserRepository extends JpaRepository<User, Integer> {
     Optional<User> findByUsernameOrEmail(String username, String email);
 
     long countByUserStatus(String userStatus);
+
+    boolean existsByRole(SystemRole role);
+
+    long countByRole(SystemRole role);
 }

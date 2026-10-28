@@ -5,6 +5,7 @@ import com.example.clubmanagement.Enum.ClubMemberRole;
 import com.example.clubmanagement.Enum.ClubMemberStatus;
 import com.example.clubmanagement.Enum.ClubStatus;
 import com.example.clubmanagement.Enum.ClubVisibility;
+import com.example.clubmanagement.Enum.SystemRole;
 import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.dto.AdminClubResponse;
 import com.example.clubmanagement.dto.AdminDashboardOverviewResponse;
@@ -197,11 +198,23 @@ public class AdminDashboardService {
                 .avatarUrl(user.getAvatarUrl())
                 .authProvider(user.getAuthProvider())
                 .userStatus(user.getUserStatus())
+                .role(user.getRole() != null ? user.getRole().name() : SystemRole.USER.name())
                 .createdAt(user.getCreatedAt())
                 .joinedClubsCount(joinedClubsCount)
                 .managedClubsCount(managedClubsCount)
                 .clubs(clubInfos)
                 .build();
+    }
+
+    /**
+     * Cập nhật vai trò hệ thống của người dùng (USER / ADMIN)
+     */
+    @Transactional
+    public void updateUserRole(Integer userId, SystemRole newRole) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
+        user.setRole(newRole);
+        userRepository.save(user);
     }
 
     private AdminClubResponse mapToAdminClubResponse(Club club) {

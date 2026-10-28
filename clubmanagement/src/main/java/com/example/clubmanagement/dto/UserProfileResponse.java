@@ -15,5 +15,6 @@ public class UserProfileResponse {
     private String avatarUrl;
     private String authProvider;
     private String userStatus;
+    private String role;
     private LocalDateTime createdAt;
 }

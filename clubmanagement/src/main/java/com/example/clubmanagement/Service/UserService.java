@@ -130,6 +130,7 @@ public class UserService {
                 .avatarUrl(user.getAvatarUrl())
                 .authProvider(user.getAuthProvider())
                 .userStatus(user.getUserStatus())
+                .role(user.getRole() != null ? user.getRole().name() : "USER")
                 .createdAt(user.getCreatedAt())
                 .build();
     }

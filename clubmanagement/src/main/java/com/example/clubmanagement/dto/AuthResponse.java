@@ -7,8 +7,8 @@ import lombok.NoArgsConstructor;
 
 @Data
 @Builder
-@NoArgsConstructor  // Constructor không tham số
-//@AllArgsConstructor
+@NoArgsConstructor
+@AllArgsConstructor
 public class AuthResponse {
 
     private String token;
@@ -18,6 +18,7 @@ public class AuthResponse {
     private String email;
     private String authProvider;
     private Integer lastSelectedClubId; // Đáp ứng Case 1: ID Câu lạc bộ chọn gần nhất để điều hướng
+    private String role; // 'ADMIN' hoặc 'USER'
     private String message;
 
     public AuthResponse(
@@ -30,13 +31,14 @@ public class AuthResponse {
             Integer lastSelectedClubId,
             String message
     ) {
-        this.token=token;
+        this.token = token;
         this.userId = userId;
         this.fullName = fullName;
         this.username = username;
         this.email = email;
         this.authProvider = authProvider;
-        this.lastSelectedClubId=lastSelectedClubId;
+        this.lastSelectedClubId = lastSelectedClubId;
+        this.role = "USER";
         this.message = message;
     }
 

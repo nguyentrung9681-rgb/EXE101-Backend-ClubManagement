@@ -2,6 +2,7 @@ package com.example.clubmanagement.Service;
 
 import com.example.clubmanagement.dto.*;
 import com.example.clubmanagement.Entity.*;
+import com.example.clubmanagement.Enum.SystemRole;
 import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.Config.JwtTokenProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,6 +66,7 @@ public class AuthService {
                 .email(request.getEmail())
                 .fullName(request.getFullName() != null ? request.getFullName() : request.getUsername())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .role(SystemRole.USER)
                 .authProvider("LOCAL")
                 .userStatus("ACTIVE")
                 .build();
@@ -111,6 +113,7 @@ public class AuthService {
                 .email(user.getEmail())
                 .authProvider(user.getAuthProvider())
                 .lastSelectedClubId(lastClubId)
+                .role(user.getRole() != null ? user.getRole().name() : SystemRole.USER.name())
                 .build();
     }
 
@@ -142,6 +145,7 @@ public class AuthService {
                     .passwordHash(null)
                     .avatarUrl(avatarUrl)
                     .userStatus("ACTIVE")
+                    .role(SystemRole.USER)
                     .build();
 
             user = userRepository.save(user);
@@ -177,6 +181,7 @@ public class AuthService {
                 .email(user.getEmail())
                 .authProvider(user.getAuthProvider())
                 .lastSelectedClubId(lastClubId)
+                .role(user.getRole() != null ? user.getRole().name() : SystemRole.USER.name())
                 .message("Đăng nhập/Đăng ký bằng Google thành công!")
                 .build();
     }

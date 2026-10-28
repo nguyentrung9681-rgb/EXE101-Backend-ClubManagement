@@ -117,7 +117,8 @@ public class SecurityConfig {
                                 "/api/payments/payos-webhook"
                         ).permitAll()
                         .requestMatchers("/ws-chat/**").permitAll()
-                        .requestMatchers("/api/admin/**", "/api/dashboard/**").authenticated()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/dashboard/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(rateLimitingFilter, LogoutFilter.class)
@@ -155,6 +156,9 @@ public class SecurityConfig {
                             }
                             if (authResponse.getLastSelectedClubId() != null) {
                                 redirectUrlBuilder.append("&lastSelectedClubId=").append(authResponse.getLastSelectedClubId());
+                            }
+                            if (authResponse.getRole() != null) {
+                                redirectUrlBuilder.append("&role=").append(URLEncoder.encode(authResponse.getRole(), StandardCharsets.UTF_8));
                             }
 
                             response.sendRedirect(redirectUrlBuilder.toString());

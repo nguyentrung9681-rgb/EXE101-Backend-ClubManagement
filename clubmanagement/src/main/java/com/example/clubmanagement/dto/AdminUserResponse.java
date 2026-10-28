@@ -16,6 +16,7 @@ public class AdminUserResponse {
     private String avatarUrl;
     private String authProvider;
     private String userStatus;
+    private String role;
     private LocalDateTime createdAt;
     private Integer joinedClubsCount;
     private Integer managedClubsCount;

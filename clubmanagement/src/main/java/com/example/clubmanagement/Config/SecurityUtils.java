@@ -1,6 +1,7 @@
 package com.example.clubmanagement.Config;
 
 import com.example.clubmanagement.Entity.User;
+import com.example.clubmanagement.Enum.SystemRole;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -25,7 +26,7 @@ public class SecurityUtils {
         if (currentUser == null) {
             throw new SecurityException("Yêu cầu không được xác thực! Vui lòng cung cấp JWT Token hợp lệ.");
         }
-        if (requestedUserId != null && !currentUser.getUserId().equals(requestedUserId)) {
+        if (requestedUserId != null && !currentUser.getUserId().equals(requestedUserId) && currentUser.getRole() != SystemRole.ADMIN) {
             throw new SecurityException("Bạn không có quyền thực hiện thao tác trên tài khoản của người dùng khác!");
         }
     }
@@ -34,6 +35,9 @@ public class SecurityUtils {
         User currentUser = getCurrentUser().orElse(null);
         if (currentUser == null) {
             throw new SecurityException("Yêu cầu không được xác thực! Vui lòng cung cấp JWT Token hợp lệ.");
+        }
+        if (currentUser.getRole() != SystemRole.ADMIN) {
+            throw new SecurityException("Bạn không có quyền thực hiện thao tác quản trị này!");
         }
     }
 
