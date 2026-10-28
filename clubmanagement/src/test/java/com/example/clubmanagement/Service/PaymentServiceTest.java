@@ -53,6 +53,9 @@ class PaymentServiceTest {
     @Mock
     private EmailService emailService;
 
+    @Mock
+    private AnalyticsService analyticsService;
+
     @InjectMocks
     private PaymentService paymentService;
 

@@ -119,7 +119,9 @@ public class SecurityConfig {
                                 // Chi trang goi thu va webhook PayOS duoc phep cong khai,
                                 // vi IPN cua PayOS khong the gui kem JWT cua ngu dung.
                                 "/api/packages",
-                                "/api/payments/payos-webhook"
+                                "/api/payments/payos-webhook",
+                                // FE phai ghi duoc hanh vi luu luong ca khi chua dang nhap (day dinh phin chuyen doi).
+                                "/api/analytics/events"
                         ).permitAll()
                         .requestMatchers("/ws-chat/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")

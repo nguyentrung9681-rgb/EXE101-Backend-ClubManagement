@@ -2,6 +2,8 @@ package com.example.clubmanagement.Repository;
 
 import com.example.clubmanagement.Entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Integer> {
@@ -19,4 +21,6 @@ public interface UserRepository extends JpaRepository<User, Integer> {
     Optional<User> findByUsernameOrEmail(String username, String email);
 
     long countByUserStatus(String userStatus);
+
+    long countByCreatedAtBetween(LocalDateTime from, LocalDateTime to);
 }
