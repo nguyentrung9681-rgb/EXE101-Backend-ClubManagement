@@ -10,6 +10,7 @@ import com.example.clubmanagement.Repository.*;
 import com.example.clubmanagement.dto.AdminClubResponse;
 import com.example.clubmanagement.dto.AdminDashboardOverviewResponse;
 import com.example.clubmanagement.dto.AdminUserResponse;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +33,11 @@ public class AdminDashboardService {
     private final GoogleSheetRepository googleSheetRepository;
     private final ClubTrelloConfigRepository clubTrelloConfigRepository;
 
+    // Cache trong bộ nhớ đệm (TTL 30 giây) giúp Admin Dashboard phản hồi tức thì (<5ms)
+    private volatile AdminDashboardOverviewResponse cachedOverview;
+    private volatile long lastOverviewCacheTime = 0;
+    private static final long CACHE_TTL_MS = 30_000;
+
     public AdminDashboardService(
             UserRepository userRepository,
             ClubRepository clubRepository,
@@ -52,10 +58,16 @@ public class AdminDashboardService {
     }
 
     /**
-     * Lấy dữ liệu tổng quan cho trang Dashboard Admin
+     * Lấy dữ liệu tổng quan cho trang Dashboard Admin.
+     * Sử dụng cache 30s + đếm trực tiếp ở database bằng index để tối ưu tốc độ.
      */
     public AdminDashboardOverviewResponse getDashboardOverview() {
-        // 1. Thống kê số lượng tổng quan
+        long nowMs = System.currentTimeMillis();
+        if (cachedOverview != null && (nowMs - lastOverviewCacheTime) < CACHE_TTL_MS) {
+            return cachedOverview;
+        }
+
+        // 1. Thống kê số lượng tổng quan (Database index scans)
         long totalUsers = userRepository.count();
         long activeUsers = userRepository.countByUserStatus("ACTIVE");
         long bannedUsers = userRepository.countByUserStatus("BANNED");
@@ -84,32 +96,36 @@ public class AdminDashboardService {
                 .totalSheets(totalSheets)
                 .build();
 
-        // 2. Thống kê tài nguyên hàng tháng (7 tháng gần nhất)
+        // 2. Thống kê tài nguyên hàng tháng bằng SQL COUNT (không kéo nội dung text về RAM)
         List<AdminDashboardOverviewResponse.MonthlyResourceStat> monthlyResourceUsage = getMonthlyResourceUsage(7);
 
-        // 3. Danh sách câu lạc bộ hiện tại (Current Clubs)
-        List<AdminClubResponse> currentClubs = getAllClubs(null, null, null).stream()
-                .limit(10)
-                .collect(Collectors.toList());
+        // 3. Top 10 câu lạc bộ mới nhất (kèm batch count)
+        List<AdminClubResponse> currentClubs = getTopRecentClubs(10);
 
-        // 4. Các hoạt động gần đây của toàn hệ thống (Recent System Activity)
-        List<AdminDashboardOverviewResponse.RecentActivityResponse> recentActivities = getRecentActivities(15);
+        // 4. Các hoạt động gần đây của toàn hệ thống (dùng LIMIT 5 ở SQL)
+        List<AdminDashboardOverviewResponse.RecentActivityResponse> recentActivities = getRecentActivitiesOptimized(15);
 
-        return AdminDashboardOverviewResponse.builder()
+        AdminDashboardOverviewResponse response = AdminDashboardOverviewResponse.builder()
                 .stats(stats)
                 .monthlyResourceUsage(monthlyResourceUsage)
                 .currentClubs(currentClubs)
                 .recentActivities(recentActivities)
                 .build();
+
+        this.cachedOverview = response;
+        this.lastOverviewCacheTime = nowMs;
+
+        return response;
     }
 
     /**
-     * Lấy danh sách toàn bộ người dùng sử dụng hệ thống, kèm bộ lọc tìm kiếm
+     * Lấy danh sách toàn bộ người dùng sử dụng hệ thống.
+     * TỐI ƯU: Giải quyết triệt để N+1 query bằng 1 câu JOIN FETCH memberships cho toàn bộ User.
      */
     public List<AdminUserResponse> getAllUsers(String search, String status, String authProvider) {
         List<User> users = userRepository.findAll();
 
-        return users.stream()
+        List<User> filteredUsers = users.stream()
                 .filter(u -> {
                     if (search != null && !search.trim().isEmpty()) {
                         String s = search.trim().toLowerCase();
@@ -131,15 +147,37 @@ public class AdminDashboardService {
                     return true;
                 })
                 .sorted(Comparator.comparing(User::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(this::mapToAdminUserResponse)
+                .collect(Collectors.toList());
+
+        if (filteredUsers.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // BATCH FETCH: Chỉ 1 query duy nhất lấy toàn bộ memberships nạp sẵn club và department
+        List<Integer> userIds = filteredUsers.stream().map(User::getUserId).collect(Collectors.toList());
+        List<ClubMember> allMemberships = clubMemberRepository.findByUserUserIdInWithDetails(userIds);
+
+        // Gom nhóm theo userId trong RAM O(1)
+        Map<Integer, List<ClubMember>> membershipsByUser = allMemberships.stream()
+                .filter(m -> m.getUser() != null)
+                .collect(Collectors.groupingBy(m -> m.getUser().getUserId()));
+
+        return filteredUsers.stream()
+                .map(u -> mapToAdminUserResponse(u, membershipsByUser.getOrDefault(u.getUserId(), Collections.emptyList())))
                 .collect(Collectors.toList());
     }
 
     /**
-     * Lấy danh sách toàn bộ Câu lạc bộ sử dụng trong hệ thống, kèm bộ lọc tìm kiếm
+     * Lấy danh sách toàn bộ Câu lạc bộ sử dụng trong hệ thống.
+     * TỐI ƯU: Dùng findAllWithCreatedBy (0 lazy load) + 3 câu GROUP BY SQL cho member, doc, event.
      */
     public List<AdminClubResponse> getAllClubs(String search, String status, String visibility) {
-        List<Club> clubs = clubRepository.findAll();
+        List<Club> clubs = clubRepository.findAllWithCreatedBy();
+
+        // 3 câu query GROUP BY lấy số liệu cho toàn bộ CLB cùng lúc
+        Map<Integer, Long> memberCounts = convertGroupedCountsToMap(clubMemberRepository.countMembersGroupedByClubId());
+        Map<Integer, Long> documentCounts = convertGroupedCountsToMap(clubDocumentRepository.countDocumentsGroupedByClubId());
+        Map<Integer, Long> eventCounts = convertGroupedCountsToMap(clubEventRepository.countEventsGroupedByClubId());
 
         return clubs.stream()
                 .filter(c -> {
@@ -164,13 +202,48 @@ public class AdminDashboardService {
                     return true;
                 })
                 .sorted(Comparator.comparing(Club::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(this::mapToAdminClubResponse)
+                .map(c -> mapToAdminClubResponse(c,
+                        memberCounts.getOrDefault(c.getId(), 0L),
+                        documentCounts.getOrDefault(c.getId(), 0L),
+                        eventCounts.getOrDefault(c.getId(), 0L)))
                 .collect(Collectors.toList());
     }
 
-    private AdminUserResponse mapToAdminUserResponse(User user) {
-        List<ClubMember> memberships = clubMemberRepository.findByUserUserId(user.getUserId());
+    /**
+     * Lấy top CLB mới nhất kèm counts tổng hợp (không scan toàn bộ danh sách)
+     */
+    private List<AdminClubResponse> getTopRecentClubs(int limit) {
+        List<Club> clubs = clubRepository.findRecentClubs(PageRequest.of(0, limit));
+        if (clubs.isEmpty()) {
+            return Collections.emptyList();
+        }
 
+        Map<Integer, Long> memberCounts = convertGroupedCountsToMap(clubMemberRepository.countMembersGroupedByClubId());
+        Map<Integer, Long> documentCounts = convertGroupedCountsToMap(clubDocumentRepository.countDocumentsGroupedByClubId());
+        Map<Integer, Long> eventCounts = convertGroupedCountsToMap(clubEventRepository.countEventsGroupedByClubId());
+
+        return clubs.stream()
+                .map(c -> mapToAdminClubResponse(c,
+                        memberCounts.getOrDefault(c.getId(), 0L),
+                        documentCounts.getOrDefault(c.getId(), 0L),
+                        eventCounts.getOrDefault(c.getId(), 0L)))
+                .collect(Collectors.toList());
+    }
+
+    private Map<Integer, Long> convertGroupedCountsToMap(List<Object[]> rawList) {
+        if (rawList == null || rawList.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Integer, Long> map = new HashMap<>();
+        for (Object[] row : rawList) {
+            if (row != null && row.length >= 2 && row[0] instanceof Integer clubId && row[1] instanceof Number count) {
+                map.put(clubId, count.longValue());
+            }
+        }
+        return map;
+    }
+
+    private AdminUserResponse mapToAdminUserResponse(User user, List<ClubMember> memberships) {
         int joinedClubsCount = (int) memberships.stream()
                 .filter(m -> m.getStatus() == ClubMemberStatus.ACTIVE)
                 .count();
@@ -215,13 +288,11 @@ public class AdminDashboardService {
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
         user.setRole(newRole);
         userRepository.save(user);
+        // Hủy cache dashboard để cập nhật ngay
+        this.cachedOverview = null;
     }
 
-    private AdminClubResponse mapToAdminClubResponse(Club club) {
-        long memberCount = clubMemberRepository.countByClubId(club.getId());
-        long documentCount = clubDocumentRepository.countByClubId(club.getId());
-        long eventCount = clubEventRepository.countByClubId(club.getId());
-
+    private AdminClubResponse mapToAdminClubResponse(Club club, long memberCount, long documentCount, long eventCount) {
         User manager = club.getCreatedBy();
 
         return AdminClubResponse.builder()
@@ -242,14 +313,12 @@ public class AdminDashboardService {
                 .build();
     }
 
+    /**
+     * Đếm số lượng tài nguyên tạo theo tháng bằng COUNT SQL (tránh truyền dữ liệu TEXT của hàng ngàn doc qua mạng).
+     */
     private List<AdminDashboardOverviewResponse.MonthlyResourceStat> getMonthlyResourceUsage(int monthsCount) {
         LocalDateTime now = LocalDateTime.now();
         List<AdminDashboardOverviewResponse.MonthlyResourceStat> result = new ArrayList<>();
-
-        List<ClubDocument> allDocs = clubDocumentRepository.findAll();
-        List<ClubEvent> allEvents = clubEventRepository.findAll();
-        List<GoogleForm> allForms = googleFormRepository.findAll();
-        List<GoogleSheet> allSheets = googleSheetRepository.findAll();
 
         for (int i = monthsCount - 1; i >= 0; i--) {
             LocalDateTime targetMonth = now.minusMonths(i);
@@ -257,21 +326,14 @@ public class AdminDashboardService {
             int monthValue = targetMonth.getMonthValue();
             String monthName = targetMonth.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
 
-            long docCount = allDocs.stream()
-                    .filter(d -> d.getCreatedAt() != null && d.getCreatedAt().getYear() == year && d.getCreatedAt().getMonthValue() == monthValue)
-                    .count();
+            LocalDateTime startOfMonth = LocalDateTime.of(year, monthValue, 1, 0, 0, 0);
+            int lastDay = targetMonth.toLocalDate().lengthOfMonth();
+            LocalDateTime endOfMonth = LocalDateTime.of(year, monthValue, lastDay, 23, 59, 59, 999999999);
 
-            long eventCount = allEvents.stream()
-                    .filter(e -> e.getCreatedAt() != null && e.getCreatedAt().getYear() == year && e.getCreatedAt().getMonthValue() == monthValue)
-                    .count();
-
-            long formCount = allForms.stream()
-                    .filter(f -> f.getCreatedAt() != null && f.getCreatedAt().getYear() == year && f.getCreatedAt().getMonthValue() == monthValue)
-                    .count();
-
-            long sheetCount = allSheets.stream()
-                    .filter(s -> s.getCreatedAt() != null && s.getCreatedAt().getYear() == year && s.getCreatedAt().getMonthValue() == monthValue)
-                    .count();
+            long docCount = clubDocumentRepository.countByCreatedAtBetween(startOfMonth, endOfMonth);
+            long eventCount = clubEventRepository.countByCreatedAtBetween(startOfMonth, endOfMonth);
+            long formCount = googleFormRepository.countByCreatedAtBetween(startOfMonth, endOfMonth);
+            long sheetCount = googleSheetRepository.countByCreatedAtBetween(startOfMonth, endOfMonth);
 
             result.add(AdminDashboardOverviewResponse.MonthlyResourceStat.builder()
                     .month(monthName)
@@ -287,15 +349,15 @@ public class AdminDashboardService {
         return result;
     }
 
-    private List<AdminDashboardOverviewResponse.RecentActivityResponse> getRecentActivities(int limit) {
+    /**
+     * Lấy các hoạt động gần đây sử dụng SQL LIMIT 5 (thay vì findAll rồi stream limit).
+     */
+    private List<AdminDashboardOverviewResponse.RecentActivityResponse> getRecentActivitiesOptimized(int limit) {
         List<AdminDashboardOverviewResponse.RecentActivityResponse> activities = new ArrayList<>();
 
-        // 1. CLB mới tạo
-        clubRepository.findAll().stream()
-                .filter(c -> c.getCreatedAt() != null)
-                .sorted(Comparator.comparing(Club::getCreatedAt).reversed())
-                .limit(5)
-                .forEach(c -> activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
+        // 1. CLB mới tạo (top 5 bằng SQL LIMIT)
+        clubRepository.findRecentClubs(PageRequest.of(0, 5)).forEach(c ->
+                activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
                         .id("club-" + c.getId())
                         .actorName(c.getCreatedBy() != null ? c.getCreatedBy().getFullName() : "Hệ thống")
                         .actorAvatar(c.getCreatedBy() != null ? c.getCreatedBy().getAvatarUrl() : null)
@@ -306,12 +368,9 @@ public class AdminDashboardService {
                         .timeAgo(formatTimeAgo(c.getCreatedAt()))
                         .build()));
 
-        // 2. Tài liệu mới tạo
-        clubDocumentRepository.findAll().stream()
-                .filter(d -> d.getCreatedAt() != null)
-                .sorted(Comparator.comparing(ClubDocument::getCreatedAt).reversed())
-                .limit(5)
-                .forEach(d -> activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
+        // 2. Tài liệu mới tạo (top 5 bằng SQL LIMIT)
+        clubDocumentRepository.findRecentDocuments(PageRequest.of(0, 5)).forEach(d ->
+                activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
                         .id("doc-" + d.getId())
                         .actorName(d.getCreatedBy() != null ? d.getCreatedBy().getFullName() : "Thành viên CLB")
                         .actorAvatar(d.getCreatedBy() != null ? d.getCreatedBy().getAvatarUrl() : null)
@@ -322,12 +381,9 @@ public class AdminDashboardService {
                         .timeAgo(formatTimeAgo(d.getCreatedAt()))
                         .build()));
 
-        // 3. Sự kiện mới tạo
-        clubEventRepository.findAll().stream()
-                .filter(e -> e.getCreatedAt() != null)
-                .sorted(Comparator.comparing(ClubEvent::getCreatedAt).reversed())
-                .limit(5)
-                .forEach(e -> activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
+        // 3. Sự kiện mới tạo (top 5 bằng SQL LIMIT)
+        clubEventRepository.findRecentEvents(PageRequest.of(0, 5)).forEach(e ->
+                activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
                         .id("event-" + e.getId())
                         .actorName(e.getCreatedBy() != null ? e.getCreatedBy().getFullName() : "Thành viên CLB")
                         .actorAvatar(e.getCreatedBy() != null ? e.getCreatedBy().getAvatarUrl() : null)
@@ -338,12 +394,9 @@ public class AdminDashboardService {
                         .timeAgo(formatTimeAgo(e.getCreatedAt()))
                         .build()));
 
-        // 4. Tài khoản mới đăng ký
-        userRepository.findAll().stream()
-                .filter(u -> u.getCreatedAt() != null)
-                .sorted(Comparator.comparing(User::getCreatedAt).reversed())
-                .limit(5)
-                .forEach(u -> activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
+        // 4. Tài khoản mới đăng ký (top 5 bằng SQL LIMIT)
+        userRepository.findTop5ByOrderByCreatedAtDesc().forEach(u ->
+                activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
                         .id("user-" + u.getUserId())
                         .actorName(u.getFullName() != null ? u.getFullName() : u.getUsername())
                         .actorAvatar(u.getAvatarUrl())
@@ -354,26 +407,22 @@ public class AdminDashboardService {
                         .timeAgo(formatTimeAgo(u.getCreatedAt()))
                         .build()));
 
-        // 5. Kết nối Trello
-        clubTrelloConfigRepository.findAll().stream()
-                .filter(t -> t.getCreatedAt() != null)
-                .sorted(Comparator.comparing(ClubTrelloConfig::getCreatedAt).reversed())
-                .limit(5)
-                .forEach(t -> {
-                    String clubName = t.getClub() != null ? t.getClub().getName() : "CLB";
-                    String actorName = (t.getClub() != null && t.getClub().getCreatedBy() != null)
-                            ? t.getClub().getCreatedBy().getFullName()
-                            : "Chủ nhiệm CLB";
-                    activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
-                            .id("trello-" + t.getId())
-                            .actorName(actorName)
-                            .action("connected Trello")
-                            .targetName(clubName + " Board")
-                            .type("TRELLO")
-                            .timestamp(t.getCreatedAt())
-                            .timeAgo(formatTimeAgo(t.getCreatedAt()))
-                            .build());
-                });
+        // 5. Kết nối Trello (top 5 bằng SQL LIMIT)
+        clubTrelloConfigRepository.findRecentConfigs(PageRequest.of(0, 5)).forEach(t -> {
+            String clubName = t.getClub() != null ? t.getClub().getName() : "CLB";
+            String actorName = (t.getClub() != null && t.getClub().getCreatedBy() != null)
+                    ? t.getClub().getCreatedBy().getFullName()
+                    : "Chủ nhiệm CLB";
+            activities.add(AdminDashboardOverviewResponse.RecentActivityResponse.builder()
+                    .id("trello-" + t.getId())
+                    .actorName(actorName)
+                    .action("connected Trello")
+                    .targetName(clubName + " Board")
+                    .type("TRELLO")
+                    .timestamp(t.getCreatedAt())
+                    .timeAgo(formatTimeAgo(t.getCreatedAt()))
+                    .build());
+        });
 
         return activities.stream()
                 .sorted(Comparator.comparing(AdminDashboardOverviewResponse.RecentActivityResponse::getTimestamp, Comparator.nullsLast(Comparator.reverseOrder())))

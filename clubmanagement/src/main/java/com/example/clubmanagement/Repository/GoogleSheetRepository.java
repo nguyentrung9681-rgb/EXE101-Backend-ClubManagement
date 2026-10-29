@@ -3,6 +3,8 @@ package com.example.clubmanagement.Repository;
 import com.example.clubmanagement.Entity.GoogleSheet;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,4 +18,5 @@ public interface GoogleSheetRepository extends JpaRepository<GoogleSheet, Intege
     Optional<GoogleSheet> findBySpreadsheetIdAndClubId(String spreadsheetId, Integer clubId);
     void deleteByClubId(Integer clubId);
     long countByClubId(Integer clubId);
+    long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
 }

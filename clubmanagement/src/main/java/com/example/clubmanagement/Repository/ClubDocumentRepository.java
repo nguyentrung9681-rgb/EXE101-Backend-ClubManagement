@@ -3,12 +3,14 @@ package com.example.clubmanagement.Repository;
 import com.example.clubmanagement.Entity.ClubDocument;
 import com.example.clubmanagement.Enum.DocumentCategory;
 import com.example.clubmanagement.Enum.DocumentType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,4 +37,12 @@ public interface ClubDocumentRepository extends JpaRepository<ClubDocument, Inte
     );
 
     long countByClubId(Integer clubId);
+
+    @Query("SELECT cd.club.id, COUNT(cd) FROM ClubDocument cd GROUP BY cd.club.id")
+    List<Object[]> countDocumentsGroupedByClubId();
+
+    long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    @Query("SELECT d FROM ClubDocument d LEFT JOIN FETCH d.createdBy ORDER BY d.createdAt DESC")
+    List<ClubDocument> findRecentDocuments(Pageable pageable);
 }

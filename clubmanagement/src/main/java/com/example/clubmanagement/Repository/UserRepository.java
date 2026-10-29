@@ -5,6 +5,7 @@ import com.example.clubmanagement.Enum.SystemRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Integer> {
@@ -28,4 +29,6 @@ public interface UserRepository extends JpaRepository<User, Integer> {
     long countByRole(SystemRole role);
 
     long countByCreatedAtBetween(LocalDateTime from, LocalDateTime to);
+
+    List<User> findTop5ByOrderByCreatedAtDesc();
 }

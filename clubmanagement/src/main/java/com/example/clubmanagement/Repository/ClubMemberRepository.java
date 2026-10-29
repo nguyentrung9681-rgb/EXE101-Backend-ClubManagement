@@ -34,6 +34,15 @@ public interface ClubMemberRepository extends JpaRepository<ClubMember, Integer>
             "WHERE cm.user.userId = :userId")
     List<ClubMember> findByUserUserIdWithDetails(@Param("userId") Integer userId);
 
+    @Query("SELECT cm FROM ClubMember cm " +
+            "JOIN FETCH cm.club " +
+            "LEFT JOIN FETCH cm.department " +
+            "WHERE cm.user.userId IN :userIds")
+    List<ClubMember> findByUserUserIdInWithDetails(@Param("userIds") List<Integer> userIds);
+
+    @Query("SELECT cm.club.id, COUNT(cm) FROM ClubMember cm GROUP BY cm.club.id")
+    List<Object[]> countMembersGroupedByClubId();
+
     /** Chỉ lấy định danh user của thành viên, dùng cho luồng broadcast WebSocket. */
     @Query("SELECT m.user.userId, m.user.username FROM ClubMember m " +
             "WHERE m.club.id = :clubId AND m.status = :status")
@@ -61,4 +70,3 @@ public interface ClubMemberRepository extends JpaRepository<ClubMember, Integer>
 
     long countByClubId(Integer clubId);
 }
-

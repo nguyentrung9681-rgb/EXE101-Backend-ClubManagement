@@ -3,6 +3,8 @@ package com.example.clubmanagement.Repository;
 import com.example.clubmanagement.Entity.GoogleForm;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,4 +18,5 @@ public interface GoogleFormRepository extends JpaRepository<GoogleForm, Integer>
     Optional<GoogleForm> findByFormIdAndClubId(String formId, Integer clubId);
     void deleteByClubId(Integer clubId);
     long countByClubId(Integer clubId);
+    long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
 }

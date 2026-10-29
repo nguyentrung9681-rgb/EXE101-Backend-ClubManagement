@@ -1,6 +1,7 @@
 package com.example.clubmanagement.Repository;
 
 import com.example.clubmanagement.Entity.ClubEvent;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -43,4 +44,12 @@ public interface ClubEventRepository extends JpaRepository<ClubEvent, Integer> {
     int markPassedEventsEnded(@Param("now") LocalDateTime now);
 
     long countByClubId(Integer clubId);
+
+    @Query("SELECT ce.club.id, COUNT(ce) FROM ClubEvent ce GROUP BY ce.club.id")
+    List<Object[]> countEventsGroupedByClubId();
+
+    long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    @Query("SELECT e FROM ClubEvent e LEFT JOIN FETCH e.createdBy ORDER BY e.createdAt DESC")
+    List<ClubEvent> findRecentEvents(Pageable pageable);
 }
