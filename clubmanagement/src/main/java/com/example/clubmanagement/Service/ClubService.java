@@ -88,6 +88,29 @@ public class ClubService {
         this.clubGooglePermissionRepository = clubGooglePermissionRepository;
     }
 
+    public static final int FREE_MAX_ACTIVE_MEMBERS = 30;
+
+    /**
+     * Kiểm tra xem CLB có được phép kết nạp thêm thành viên hoạt động mới hay không.
+     * Nếu chưa đăng ký gói trả phí còn hạn, CLB tối đa chỉ được 30 thành viên hoạt động.
+     */
+    public void validateMemberCapacityForNewMember(Integer clubId) {
+        long activeCount = clubMemberRepository.countByClubIdAndStatus(clubId, ClubMemberStatus.ACTIVE);
+        if (activeCount < FREE_MAX_ACTIVE_MEMBERS) {
+            return;
+        }
+
+        boolean hasActiveSubscription = clubSubscriptionRepository
+                .findFirstByClubIdAndStatusOrderByEndDateDesc(clubId, com.example.clubmanagement.Enum.SubscriptionStatus.ACTIVE)
+                .map(sub -> sub.getEndDate() != null && sub.getEndDate().isAfter(LocalDateTime.now()))
+                .orElse(false);
+
+        if (!hasActiveSubscription) {
+            throw new RuntimeException("Câu lạc bộ đã đạt giới hạn tối đa " + FREE_MAX_ACTIVE_MEMBERS 
+                    + " thành viên đối với gói miễn phí! Chủ nhiệm vui lòng nâng cấp gói dịch vụ để kết nạp thêm thành viên.");
+        }
+    }
+
     /**
      * Tạo một câu lạc bộ mới và tự động gán người tạo làm Chủ nhiệm (PRESIDENT).
      */
@@ -150,6 +173,9 @@ public class ClubService {
             }
             // Nếu là LEFT hoặc đã bị từ chối trước đó, chúng ta có thể cập nhật lại bản ghi này để xin tham gia lại
             ClubMemberStatus status = (club.getVisibility() == ClubVisibility.PRIVATE) ? ClubMemberStatus.PENDING : ClubMemberStatus.ACTIVE;
+            if (status == ClubMemberStatus.ACTIVE) {
+                validateMemberCapacityForNewMember(clubId);
+            }
             LocalDateTime joinedAt = (status == ClubMemberStatus.ACTIVE) ? LocalDateTime.now() : null;
 
             existingMember.setStatus(status);
@@ -160,6 +186,9 @@ public class ClubService {
 
         // Thiết lập trạng thái dựa trên chế độ hiển thị của Club cho thành viên mới hoàn toàn
         ClubMemberStatus status = ClubMemberStatus.ACTIVE;
+        if (club.getVisibility() != ClubVisibility.PRIVATE) {
+            validateMemberCapacityForNewMember(clubId);
+        }
         LocalDateTime joinedAt = LocalDateTime.now();
 
         if (club.getVisibility() == ClubVisibility.PRIVATE) {
@@ -207,6 +236,7 @@ public class ClubService {
         }
 
         if (approve) {
+            validateMemberCapacityForNewMember(clubId);
             member.setStatus(ClubMemberStatus.ACTIVE);
             member.setJoinedAt(LocalDateTime.now());
             return clubMemberRepository.save(member);
