@@ -82,8 +82,15 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
   * **200 OK (Thành công):**
     ```json
     {
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ...",
-      "email": "nguyenvana@example.com"
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "userId": 1,
+      "fullName": "Nguyễn Văn A",
+      "username": "nguyenvana",
+      "email": "nguyenvana@example.com",
+      "authProvider": "LOCAL",
+      "lastSelectedClubId": null,
+      "role": "USER",
+      "message": null
     }
     ```
   * **400 Bad Request (Sai thông tin đăng nhập):**
@@ -118,6 +125,7 @@ Dưới đây là sơ đồ/trình tự gọi API để FE hình dung cách ghé
       "email": "nguyenvana@gmail.com",
       "authProvider": "GOOGLE",
       "lastSelectedClubId": null,
+      "role": "USER",
       "message": "Đăng nhập/Đăng ký bằng Google thành công!"
     }
     ```
