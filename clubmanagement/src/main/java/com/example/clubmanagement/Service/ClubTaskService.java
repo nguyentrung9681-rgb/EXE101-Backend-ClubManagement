@@ -136,7 +136,7 @@ public class ClubTaskService {
             }
         }
 
-        ClubTaskResponse response = mapToResponse(savedTask);
+        ClubTaskResponse response = toResponse(savedTask.getTaskId());
         broadcastTaskEvent("TASK_CREATED", clubId, response);
         return response;
     }
@@ -229,8 +229,8 @@ public class ClubTaskService {
             }
         }
 
-        ClubTaskResponse response = mapToResponse(savedTask);
-        broadcastTaskEvent("TASK_UPDATED", savedTask.getClub().getId(), response);
+        ClubTaskResponse response = toResponse(savedTask.getTaskId());
+        broadcastTaskEvent("TASK_UPDATED", clubId, response);
         return response;
     }
 
@@ -413,6 +413,18 @@ public class ClubTaskService {
             taskRepository.save(task);
             broadcastTaskEvent("TASK_UPDATED_FROM_TRELLO", task.getClub().getId(), mapToResponse(task));
         }
+    }
+
+    /**
+     * build response tu ban ghi gan nhat trong DB.
+     * Khong duoc dung truc tiep ket tra cua save(): merge chay trong session rieng
+     * va thay moi quan he club/event/assignedUser bang proxy lazy moi, nen doc tu
+     * entity tra ve sau save() van nem LazyInitializationException.
+     */
+    private ClubTaskResponse toResponse(Integer taskId) {
+        ClubTask fresh = taskRepository.findByIdWithDetails(taskId)
+                .orElseThrow(() -> new RuntimeException("Task not found"));
+        return mapToResponse(fresh);
     }
 
     private ClubTaskResponse mapToResponse(ClubTask t) {
