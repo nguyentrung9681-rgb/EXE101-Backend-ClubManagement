@@ -16,10 +16,29 @@ public interface ClubTaskRepository extends JpaRepository<ClubTask, Integer> {
     List<ClubTask> findByAssignedUserUserId(Integer userId);
     List<ClubTask> findByClubIdAndIsFinanceRelatedTrue(Integer clubId);
     List<ClubTask> findByEventId(Integer eventId);
-    Optional<ClubTask> findByTrelloCardId(String trelloCardId);
     void deleteByClubId(Integer clubId);
 
-    // ─── Danh sách task với JOIN FETCH để tránh N+1 query ───
+    // ─── Query JOIN FETCH: nạp sẵn club/event/assignedUser ───
+
+    /**
+     * Nạp sẵn club/event/assignedUser cho 1 task.
+     * Bắt buộc cho các luồng ghi: open-in-view đang tắt, nếu load bằng findById thường thì
+     * mapToResponse sẽ chạm lazy proxy ngoài session và ném LazyInitializationException.
+     */
+    @Query("SELECT t FROM ClubTask t " +
+            "JOIN FETCH t.club " +
+            "LEFT JOIN FETCH t.event " +
+            "LEFT JOIN FETCH t.assignedUser " +
+            "WHERE t.taskId = :taskId")
+    Optional<ClubTask> findByIdWithDetails(@Param("taskId") Integer taskId);
+
+    /** Bản JOIN FETCH của findByTrelloCardId, dùng cho webhook Trello. */
+    @Query("SELECT t FROM ClubTask t " +
+            "JOIN FETCH t.club " +
+            "LEFT JOIN FETCH t.event " +
+            "LEFT JOIN FETCH t.assignedUser " +
+            "WHERE t.trelloCardId = :trelloCardId")
+    Optional<ClubTask> findByTrelloCardIdWithDetails(@Param("trelloCardId") String trelloCardId);
 
     /**
      * Lấy tất cả task trong CLB, nạp sẵn club/event/assignedUser.

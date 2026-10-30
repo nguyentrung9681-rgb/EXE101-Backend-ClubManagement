@@ -169,7 +169,7 @@ public class ClubTaskService {
     }
 
     public ClubTaskResponse updateTask(Integer taskId, ClubTaskRequest req, Integer userId) {
-        ClubTask task = taskRepository.findById(taskId)
+        ClubTask task = taskRepository.findByIdWithDetails(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
         Integer clubId = task.getClub().getId();
@@ -367,7 +367,7 @@ public class ClubTaskService {
         Map<String, Object> cardData = (Map<String, Object>) data.get("card");
         String cardId = cardData.get("id").toString();
 
-        Optional<ClubTask> taskOpt = taskRepository.findByTrelloCardId(cardId);
+        Optional<ClubTask> taskOpt = taskRepository.findByTrelloCardIdWithDetails(cardId);
         if (!taskOpt.isPresent()) return;
         ClubTask task = taskOpt.get();
 
