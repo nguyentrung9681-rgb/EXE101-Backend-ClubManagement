@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot - ClubmanagementApplication",
+            "request": "launch",
+            "mainClass": "com.example.clubmanagement.ClubmanagementApplication",
+            "projectName": "clubmanagement",
+            "cwd": "${workspaceFolder}/clubmanagement"
+        }
+    ]
+}

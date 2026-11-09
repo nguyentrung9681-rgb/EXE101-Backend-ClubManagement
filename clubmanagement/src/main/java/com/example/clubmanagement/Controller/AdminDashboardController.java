@@ -8,6 +8,7 @@ import com.example.clubmanagement.dto.AdminUserResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -114,6 +115,31 @@ public class AdminDashboardController {
                     "userId", userId,
                     "newRole", newRole.name()
             ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Xóa tài khoản người dùng khỏi hệ thống.
+     * DELETE /api/admin/users/{userId}
+     */
+    @DeleteMapping("/users/{userId}")
+    @Operation(summary = "Xóa tài khoản người dùng", description = "Chỉ tài khoản Admin mới có quyền thực hiện. Không thể tự xóa chính mình và không thể xóa user đang làm Chủ nhiệm CLB.")
+    public ResponseEntity<?> deleteUser(
+            @Parameter(description = "ID của người dùng cần xóa")
+            @PathVariable Integer userId) {
+        try {
+            Integer currentAdminId = com.example.clubmanagement.Config.SecurityUtils.getCurrentUserId();
+            adminDashboardService.deleteUserByAdmin(userId, currentAdminId);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Xóa tài khoản người dùng thành công!",
+                    "deletedUserId", userId
+            ));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (java.util.NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

@@ -292,6 +292,45 @@ public class AdminDashboardService {
         this.cachedOverview = null;
     }
 
+    /**
+     * Xóa tài khoản người dùng bởi Admin.
+     * Kiểm tra:
+     * 1. Không cho phép admin tự xóa chính tài khoản của mình.
+     * 2. Không cho phép xóa nếu người này đang là Chủ nhiệm (PRESIDENT) của bất kỳ CLB đang hoạt động nào.
+     * 3. Rút khỏi tất cả CLB đang tham gia và xóa tài khoản.
+     */
+    @Transactional
+    public void deleteUserByAdmin(Integer targetUserId, Integer currentAdminId) {
+        if (targetUserId == null) {
+            throw new IllegalArgumentException("Vui lòng cung cấp ID người dùng cần xóa!");
+        }
+
+        if (targetUserId.equals(currentAdminId)) {
+            throw new IllegalStateException("Bạn không thể tự xóa tài khoản của chính mình!");
+        }
+
+        User user = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new NoSuchElementException("Không tìm thấy người dùng với ID: " + targetUserId));
+
+        // Kiểm tra xem user có đang là Chủ nhiệm của CLB nào không
+        List<ClubMember> memberships = clubMemberRepository.findByUserUserId(targetUserId);
+        boolean isPresidentOfAnyClub = memberships.stream()
+                .anyMatch(m -> m.getRole() == ClubMemberRole.PRESIDENT && m.getStatus() == ClubMemberStatus.ACTIVE);
+
+        if (isPresidentOfAnyClub) {
+            throw new IllegalStateException("Không thể xóa tài khoản này vì người dùng đang là Chủ nhiệm (PRESIDENT) của câu lạc bộ! Vui lòng chuyển giao chức vụ Chủ nhiệm hoặc giải thể CLB trước khi xóa tài khoản.");
+        }
+
+        // Rút khỏi tất cả các CLB còn lại để dọn dẹp quan hệ
+        clubMemberRepository.deleteAll(memberships);
+
+        // Xóa người dùng khỏi hệ thống
+        userRepository.delete(user);
+
+        // Hủy cache dashboard để số lượng thống kê cập nhật ngay
+        this.cachedOverview = null;
+    }
+
     private AdminClubResponse mapToAdminClubResponse(Club club, long memberCount, long documentCount, long eventCount) {
         User manager = club.getCreatedBy();
 
