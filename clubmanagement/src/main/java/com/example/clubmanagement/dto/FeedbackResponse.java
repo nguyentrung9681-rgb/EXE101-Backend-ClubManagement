@@ -21,4 +21,9 @@ public class FeedbackResponse {
     private String fullName;
     private String email;
     private String avatarUrl;
+
+    /** true khi review gắn với một đơn đã thanh toán (verified review). */
+    private boolean verified;
+    /** Mã đơn đã thanh toán mà review này gắn vào, null nếu chưa xác minh. */
+    private Long orderCode;
 }

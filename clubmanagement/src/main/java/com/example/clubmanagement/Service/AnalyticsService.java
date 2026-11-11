@@ -2,11 +2,13 @@ package com.example.clubmanagement.Service;
 
 import com.example.clubmanagement.Entity.ClubSubscription;
 import com.example.clubmanagement.Entity.PaymentOrder;
+import com.example.clubmanagement.Entity.SubscriptionPackage;
 import com.example.clubmanagement.Entity.TrackingEvent;
 import com.example.clubmanagement.Entity.User;
 import com.example.clubmanagement.Enum.OrderStatus;
 import com.example.clubmanagement.Enum.SubscriptionStatus;
 import com.example.clubmanagement.Repository.ClubSubscriptionRepository;
+import com.example.clubmanagement.Repository.FeedbackRepository;
 import com.example.clubmanagement.Repository.PaymentOrderRepository;
 import com.example.clubmanagement.Repository.TrackingEventRepository;
 import com.example.clubmanagement.Repository.UserRepository;
@@ -39,20 +41,24 @@ public class AnalyticsService {
 
     private static final Pattern EVENT_NAME = Pattern.compile("[a-z0-9_]{2,60}");
     private static final DateTimeFormatter DAY_LABEL = DateTimeFormatter.ofPattern("dd/MM");
+    private static final long TRANSACTION_TARGET_ORDERS = 20;
 
     private final TrackingEventRepository eventRepository;
     private final PaymentOrderRepository orderRepository;
     private final UserRepository userRepository;
     private final ClubSubscriptionRepository subscriptionRepository;
+    private final FeedbackRepository feedbackRepository;
 
     public AnalyticsService(TrackingEventRepository eventRepository,
                             PaymentOrderRepository orderRepository,
                             UserRepository userRepository,
-                            ClubSubscriptionRepository subscriptionRepository) {
+                            ClubSubscriptionRepository subscriptionRepository,
+                            FeedbackRepository feedbackRepository) {
         this.eventRepository = eventRepository;
         this.orderRepository = orderRepository;
         this.userRepository = userRepository;
         this.subscriptionRepository = subscriptionRepository;
+        this.feedbackRepository = feedbackRepository;
     }
 
     /** Endpoint cong khai: frontend gui hanh vi + UTM ve day. */
@@ -159,7 +165,12 @@ public class AnalyticsService {
 
         List<PaymentOrder> createdOrders = orderRepository.findByCreatedAtBetween(from, to);
         List<PaymentOrder> paidOrders = orderRepository.findByStatusAndPaidAtBetween(OrderStatus.PAID, from, to);
-        long newUsers = userRepository.countByCreatedAtBetween(from, to);
+        List<Integer> newUserIds = userRepository.findIdsCreatedAtBetween(from, to);
+        long newUsers = newUserIds.size();
+
+        // Quy đơn và user mới về first-touch thật (mọi thời điểm). Nếu chỉ dựa vào event trong cửa sổ,
+        // khách đến từ kỳ trước rồi trả tiền kỳ này sẽ bị rơi khỏi mọi kênh -> mất doanh thu quy kênh.
+        resolveFirstTouch(firstTouchByUser, createdOrders, paidOrders, newUserIds);
 
         List<TrendBucket> trend = buildTrend(from, to);
         String granularity = trend.isEmpty() || isDailyBucket(trend.get(0)) ? "DAY" : "MONTH";
@@ -175,14 +186,131 @@ public class AnalyticsService {
                         .checkouts(createdOrders.size())
                         .paidOrders(paidOrders.size())
                         .revenue(sumAmount(paidOrders))
+                        .totalUsers(userRepository.count())
+                        .payingCustomers(orderRepository.countDistinctPayingCustomers())
+                        .averageOrderValue(averageOrderValue(sumAmount(paidOrders), paidOrders.size()))
                         .build())
                 .funnel(buildFunnel(visitorsByStep, newUsers, createdOrders.size(), paidOrders.size()))
-                .channels(buildChannels(visitorsByChannel, firstTouchByUser, createdOrders, paidOrders))
+                .channels(buildChannels(visitorsByChannel, firstTouchByUser, createdOrders, paidOrders, newUserIds))
                 .revenue(buildRevenue(from, to))
                 .revenueTrend(trend.stream().map(TrendBucket::toPoint).collect(java.util.stream.Collectors.toList()))
                 .trendGranularity(granularity)
                 .subscriptions(buildSubscriptions(to))
+                .subscriptionSales(buildSubscriptionSales(paidOrders, from, to))
+                .reviews(buildReviews())
+                .transactionGoal(buildTransactionGoal())
                 .build();
+    }
+
+    private AdminAnalyticsResponse.TransactionGoal buildTransactionGoal() {
+        long paidOrders = orderRepository.countPaidOrdersForTransactionGoal();
+        return AdminAnalyticsResponse.TransactionGoal.builder()
+                .targetOrders(TRANSACTION_TARGET_ORDERS)
+                .paidOrders(paidOrders)
+                .remainingOrders(Math.max(TRANSACTION_TARGET_ORDERS - paidOrders, 0))
+                .progressPercent(ratio(paidOrders, TRANSACTION_TARGET_ORDERS))
+                .achieved(paidOrders >= TRANSACTION_TARGET_ORDERS)
+                .build();
+    }
+
+    /**
+     * Don thanh toan goi membership trong cua so dang xem. Moi payment_orders deu gan mot goi
+     * nen day chinh la so don ban subscription, tach theo goi va theo mua moi / gia han.
+     */
+    /** G3.4: review verified trên tổng khách trả tiền, điểm trung bình và tỉ lệ mua lại (toàn thời điểm). */
+    private AdminAnalyticsResponse.Reviews buildReviews() {
+        long totalReviews = feedbackRepository.count();
+        long verifiedReviews = feedbackRepository.countByOrderIsNotNull();
+        Double avg = feedbackRepository.findAverageRating();
+        Double averageRating = avg == null ? null : Math.round(avg * 100.0) / 100.0;
+
+        long payingCustomers = orderRepository.countDistinctPayingCustomers();
+        long repeatCustomers = orderRepository.findRepeatPayingCustomerIds().size();
+
+        return AdminAnalyticsResponse.Reviews.builder()
+                .totalReviews(totalReviews)
+                .verifiedReviews(verifiedReviews)
+                .averageRating(averageRating)
+                .payingCustomers(payingCustomers)
+                .reviewCoveragePercent(payingCustomers == 0 ? null : ratio(verifiedReviews, payingCustomers))
+                .repeatPayingCustomers(repeatCustomers)
+                .repeatPurchaseRate(payingCustomers == 0 ? null : ratio(repeatCustomers, payingCustomers))
+                .build();
+    }
+
+    private AdminAnalyticsResponse.SubscriptionSales buildSubscriptionSales(
+            List<PaymentOrder> paidOrders, LocalDateTime from, LocalDateTime to) {
+
+        Set<Integer> clubsPaidBefore = new HashSet<>(orderRepository.findClubIdsPaidBefore(from));
+        Set<Integer> firstTimeClubs = new HashSet<>();
+        Set<Integer> payingClubs = new HashSet<>();
+        Map<Integer, PackageSalesAccumulator> byPackage = new LinkedHashMap<>();
+        long newSubscriptions = 0;
+
+        for (PaymentOrder order : paidOrders) {
+            SubscriptionPackage pack = order.getSubscriptionPackage();
+            if (pack == null || pack.getId() == null) {
+                continue;
+            }
+            Integer clubId = order.getClub() == null ? null : order.getClub().getId();
+            if (clubId != null) {
+                payingClubs.add(clubId);
+            }
+            // Chỉ đơn đầu tiên của CLB chưa từng trả tiền mới là mua mới; đơn sau nối hạn gói cũ.
+            boolean isNew = clubId != null && !clubsPaidBefore.contains(clubId) && firstTimeClubs.add(clubId);
+            if (isNew) {
+                newSubscriptions++;
+            }
+
+            PackageSalesAccumulator acc = byPackage.computeIfAbsent(pack.getId(), id -> new PackageSalesAccumulator(pack));
+            acc.paidOrders++;
+            acc.revenue = acc.revenue.add(order.getAmount() == null ? BigDecimal.ZERO : order.getAmount());
+            if (isNew) {
+                acc.newSubscriptions++;
+            }
+        }
+
+        List<AdminAnalyticsResponse.PackageSales> packages = byPackage.values().stream()
+                .map(PackageSalesAccumulator::toPackageSales)
+                .sorted(Comparator.comparing(AdminAnalyticsResponse.PackageSales::getRevenue).reversed())
+                .collect(java.util.stream.Collectors.toList());
+
+        return AdminAnalyticsResponse.SubscriptionSales.builder()
+                .from(from)
+                .to(to)
+                .paidOrders(paidOrders.size())
+                .revenue(sumAmount(paidOrders))
+                .newSubscriptions(newSubscriptions)
+                .renewals(paidOrders.size() - newSubscriptions)
+                .payingClubs(payingClubs.size())
+                .byPackage(packages)
+                .build();
+    }
+
+    private static final class PackageSalesAccumulator {
+        private final SubscriptionPackage pack;
+        private long paidOrders;
+        private BigDecimal revenue = BigDecimal.ZERO;
+        private long newSubscriptions;
+
+        private PackageSalesAccumulator(SubscriptionPackage pack) {
+            this.pack = pack;
+        }
+
+        private AdminAnalyticsResponse.PackageSales toPackageSales() {
+            Integer durationDays = pack.getDurationDays();
+            return AdminAnalyticsResponse.PackageSales.builder()
+                    .packageId(pack.getId())
+                    .code(pack.getCode())
+                    .name(pack.getName())
+                    .durationDays(durationDays)
+                    .cycle(durationDays != null && durationDays >= 300 ? "YEARLY" : "MONTHLY")
+                    .paidOrders(paidOrders)
+                    .revenue(revenue)
+                    .newSubscriptions(newSubscriptions)
+                    .renewals(paidOrders - newSubscriptions)
+                    .build();
+        }
     }
 
     /**
@@ -359,28 +487,56 @@ public class AnalyticsService {
                 .build();
     }
 
+    /** Bổ sung first-touch mọi thời điểm cho user có đơn hoặc user mới, ghi đè giá trị trong cửa sổ. */
+    private void resolveFirstTouch(Map<Integer, String> firstTouchByUser,
+                                   List<PaymentOrder> createdOrders, List<PaymentOrder> paidOrders,
+                                   List<Integer> newUserIds) {
+        Set<Integer> ids = new HashSet<>(newUserIds);
+        for (PaymentOrder order : createdOrders) {
+            Integer id = orderUserId(order);
+            if (id != null) ids.add(id);
+        }
+        for (PaymentOrder order : paidOrders) {
+            Integer id = orderUserId(order);
+            if (id != null) ids.add(id);
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        for (Object[] row : eventRepository.findFirstTouchByUserIds(ids)) {
+            Integer userId = (Integer) row[0];
+            String source = (String) row[1];
+            String medium = (String) row[2];
+            if (userId != null && source != null && !source.isBlank()) {
+                firstTouchByUser.put(userId, channelKey(source, medium));
+            }
+        }
+    }
+
     private List<AdminAnalyticsResponse.ChannelStat> buildChannels(
             Map<String, Set<String>> visitorsByChannel,
             Map<Integer, String> firstTouchByUser,
             List<PaymentOrder> createdOrders,
-            List<PaymentOrder> paidOrders) {
+            List<PaymentOrder> paidOrders,
+            List<Integer> newUserIds) {
 
         Map<String, AdminAnalyticsResponse.ChannelStat> byChannel = new LinkedHashMap<>();
-        visitorsByChannel.forEach((key, visitors) -> byChannel.put(key, AdminAnalyticsResponse.ChannelStat.builder()
-                .source(key.split("\\|", 2)[0])
-                .medium(key.contains("|") ? key.split("\\|", 2)[1] : null)
-                .visitors(visitors.size())
-                .revenue(BigDecimal.ZERO)
-                .build()));
+        visitorsByChannel.forEach((key, visitors) -> byChannel.put(key, newChannel(key, visitors.size())));
 
+        for (Integer userId : newUserIds) {
+            AdminAnalyticsResponse.ChannelStat stat = channelForUser(byChannel, firstTouchByUser, userId);
+            if (stat != null) {
+                stat.setNewUsers(stat.getNewUsers() + 1);
+            }
+        }
         for (PaymentOrder order : createdOrders) {
-            AdminAnalyticsResponse.ChannelStat stat = resolveChannel(byChannel, firstTouchByUser, order);
+            AdminAnalyticsResponse.ChannelStat stat = channelForUser(byChannel, firstTouchByUser, orderUserId(order));
             if (stat != null) {
                 stat.setCheckouts(stat.getCheckouts() + 1);
             }
         }
         for (PaymentOrder order : paidOrders) {
-            AdminAnalyticsResponse.ChannelStat stat = resolveChannel(byChannel, firstTouchByUser, order);
+            AdminAnalyticsResponse.ChannelStat stat = channelForUser(byChannel, firstTouchByUser, orderUserId(order));
             if (stat != null) {
                 stat.setPaidOrders(stat.getPaidOrders() + 1);
                 if (order.getAmount() != null) {
@@ -389,22 +545,47 @@ public class AnalyticsService {
             }
         }
 
+        for (AdminAnalyticsResponse.ChannelStat stat : byChannel.values()) {
+            stat.setConversionRate(stat.getVisitors() == 0 ? null : ratio(stat.getPaidOrders(), stat.getVisitors()));
+            stat.setAverageOrderValue(averageOrderValue(stat.getRevenue(), stat.getPaidOrders()));
+        }
+
         return byChannel.values().stream()
                 .sorted(Comparator.comparing(AdminAnalyticsResponse.ChannelStat::getVisitors).reversed())
                 .limit(12)
                 .collect(java.util.stream.Collectors.toList());
     }
 
-    /** Don hang duoc quy ve kenh UTM ma tai khoản do lan dau tien (first-touch attribution). */
-    private AdminAnalyticsResponse.ChannelStat resolveChannel(
+    /** Quy user về kênh first-touch; tạo kênh mới (0 visitor) nếu first-touch đến từ trước cửa sổ. */
+    private AdminAnalyticsResponse.ChannelStat channelForUser(
             Map<String, AdminAnalyticsResponse.ChannelStat> byChannel,
             Map<Integer, String> firstTouchByUser,
-            PaymentOrder order) {
-        if (order.getUser() == null || order.getUser().getUserId() == null) {
+            Integer userId) {
+        if (userId == null) {
             return null;
         }
-        String key = firstTouchByUser.get(order.getUser().getUserId());
-        return key == null ? null : byChannel.get(key);
+        String key = firstTouchByUser.get(userId);
+        return key == null ? null : byChannel.computeIfAbsent(key, k -> newChannel(k, 0));
+    }
+
+    private static AdminAnalyticsResponse.ChannelStat newChannel(String key, long visitors) {
+        return AdminAnalyticsResponse.ChannelStat.builder()
+                .source(key.split("\\|", 2)[0])
+                .medium(key.contains("|") ? key.split("\\|", 2)[1] : null)
+                .visitors(visitors)
+                .revenue(BigDecimal.ZERO)
+                .build();
+    }
+
+    private static Integer orderUserId(PaymentOrder order) {
+        return order.getUser() == null ? null : order.getUser().getUserId();
+    }
+
+    private static BigDecimal averageOrderValue(BigDecimal revenue, long paidOrders) {
+        if (paidOrders == 0) {
+            return null;
+        }
+        return revenue.divide(BigDecimal.valueOf(paidOrders), 2, RoundingMode.HALF_UP);
     }
 
     private static String channelKey(String source, String medium) {

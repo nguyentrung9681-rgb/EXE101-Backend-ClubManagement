@@ -27,6 +27,23 @@ public class AdminAnalyticsResponse {
     /** DAY hoặc MONTH — độ phân giải của revenueTrend. */
     private String trendGranularity;
     private Subscriptions subscriptions;
+    /** Đơn thanh toán gói membership trong cửa sổ `days`, tách theo từng gói. */
+    private SubscriptionSales subscriptionSales;
+    /** Review và giữ chân khách hàng (G3.4): số review, verified, điểm trung bình, coverage, mua lại. */
+    private Reviews reviews;
+    private TransactionGoal transactionGoal;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TransactionGoal {
+        private long targetOrders;
+        private long paidOrders;
+        private long remainingOrders;
+        private double progressPercent;
+        private boolean achieved;
+    }
 
     @Data
     @Builder
@@ -39,6 +56,32 @@ public class AdminAnalyticsResponse {
         private long checkouts;
         private long paidOrders;
         private BigDecimal revenue;
+        /** Tổng số tài khoản toàn hệ thống (không chỉ trong cửa sổ `days`). */
+        private long totalUsers;
+        /** Khách đã từng thanh toán, đếm một lần cho mỗi người (mọi thời điểm). */
+        private long payingCustomers;
+        /** Giá trị đơn trung bình trong cửa sổ `days` = revenue / paidOrders; null khi chưa có đơn. */
+        private BigDecimal averageOrderValue;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Reviews {
+        private long totalReviews;
+        /** Review gắn với một đơn PAID (verified). */
+        private long verifiedReviews;
+        /** Điểm trung bình 1-5, null khi chưa có review. */
+        private Double averageRating;
+        /** Khách đã từng trả tiền (mẫu số của coverage). */
+        private long payingCustomers;
+        /** % khách đã trả tiền có để lại review verified; null khi chưa có khách trả tiền. */
+        private Double reviewCoveragePercent;
+        /** Khách có từ 2 đơn PAID trở lên. */
+        private long repeatPayingCustomers;
+        /** % khách trả tiền mua lại; null khi chưa có khách trả tiền. */
+        private Double repeatPurchaseRate;
     }
 
     @Data
@@ -97,6 +140,39 @@ public class AdminAnalyticsResponse {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class SubscriptionSales {
+        private LocalDateTime from;
+        private LocalDateTime to;
+        private long paidOrders;
+        private BigDecimal revenue;
+        /** Đơn của CLB chưa từng thanh toán gói nào trước cửa sổ đang xem. */
+        private long newSubscriptions;
+        private long renewals;
+        private long payingClubs;
+        private List<PackageSales> byPackage;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PackageSales {
+        private Integer packageId;
+        private String code;
+        private String name;
+        private Integer durationDays;
+        /** MONTHLY (dưới 300 ngày) hoặc YEARLY (từ 300 ngày). */
+        private String cycle;
+        private long paidOrders;
+        private BigDecimal revenue;
+        private long newSubscriptions;
+        private long renewals;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class FunnelStep {
         private String step;
         private String label;
@@ -115,8 +191,14 @@ public class AdminAnalyticsResponse {
         private String source;
         private String medium;
         private long visitors;
+        /** User mới trong cửa sổ `days` quy về kênh first-touch này. */
+        private long newUsers;
         private long checkouts;
         private long paidOrders;
         private BigDecimal revenue;
+        /** Tỉ lệ chuyển đổi visitor -> đơn trả tiền (%); null khi kênh chưa có visitor. */
+        private Double conversionRate;
+        /** Giá trị đơn trung bình của kênh = revenue / paidOrders; null khi chưa có đơn. */
+        private BigDecimal averageOrderValue;
     }
 }

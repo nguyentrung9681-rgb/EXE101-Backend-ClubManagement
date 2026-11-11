@@ -662,11 +662,28 @@ Sự kiện sai định dạng (`eventName` chứa ký tự không hợp lệ) t
     "totalActive": 17,
     "expiringIn30Days": 9,
     "payingUsers": 16
+  },
+  "subscriptionSales": {
+    "from": "2026-09-28T17:10:00",
+    "to": "2026-10-28T17:10:00",
+    "paidOrders": 12,
+    "revenue": 1200000.00,
+    "newSubscriptions": 5,
+    "renewals": 7,
+    "payingClubs": 9,
+    "byPackage": [
+      {"packageId": 2, "code": "YEARLY", "name": "Gói năm", "durationDays": 365, "cycle": "YEARLY", "paidOrders": 1, "revenue": 708000.00, "newSubscriptions": 1, "renewals": 0},
+      {"packageId": 1, "code": "MONTHLY", "name": "Gói tháng", "durationDays": 30, "cycle": "MONTHLY", "paidOrders": 11, "revenue": 492000.00, "newSubscriptions": 4, "renewals": 7}
+    ]
   }
 }
 ```
 * **Ghi chú:** `unit` cho biết đơn vị đếm của từng bước (`visitor` / `user` / `order`), UI cần hiển thị chú thích tương ứng. `channels` dùng mô hình **first-touch**: đơn hàng được quy cho kênh UTM mà người dùng nhìn thấy đầu tiên.
 * **Bảng KPI doanh thu** (`revenue`) luôn tính theo `paid_at` của đơn `PAID` với cửa sổ cố định (7 ngày / 30 ngày / từ 01/01 năm nay), **không** phụ thuộc tham số `days`; chỉ có `period` là bám theo cửa sổ request. `growthPercent` so với kỳ liền trước có cùng độ dài, và trả `null` khi kỳ trước = 0đ (UI nên hiển thị "—").
 * **Biểu đồ dòng tiền** (`revenueTrend`): `trendGranularity = "DAY"` khi khoảng xem ≤ 62 ngày (mỗi điểm một ngày, `bucket` dạng `2026-10-21`), ngược lại `"MONTH"` (`bucket` dạng `2026-09`). Các bucket trống vẫn được trả về với `amount: 0` để vẽ liên tục.
-* **Gói tháng / gói năm** (`subscriptions`): phân loại theo `durationDays` của gói (≥ 300 ngày = gói năm), chỉ đếm subscription `status = ACTIVE`. `expiringIn30Days` là số gói sắp hết hạn trong 30 ngày tới, `payingUsers` là số user đã thanh toán tạo ra các gói đang hiệu lực đó.
+* **Gói tháng / gói năm** (`subscriptions`): phân loại theo `durationDays` của gói (≥ 300 ngày = gói năm), chỉ đếm subscription `status = ACTIVE`. `expiringIn30Days` là số gói sắp hết hạn trong 30 ngày tới, `payingUsers` là số user đã thanh toán tạo ra các gói đang hiệu lực đó. **Block này là ảnh chụp hiện tại, không đổi theo `days`.**
+* **Đơn thanh toán gói membership** (`subscriptionSales`): bám theo cửa sổ `days`, đếm đơn `PAID` theo `paid_at`. Mọi `payment_orders` đều gắn một `package_id` nên `paidOrders` ở đây bằng `totals.paidOrders`; giá trị bổ sung là `byPackage` (số đơn + doanh thu + mua mới/gia hạn của từng gói, sắp xếp giảm dần theo doanh thu) và `payingClubs` (số CLB khác nhau đã trả tiền trong kỳ).
+  - `newSubscriptions` = đơn đầu tiên của một CLB **chưa từng** có đơn `PAID` trước `from`; mọi đơn còn lại tính vào `renewals` (kể cả đơn thứ 2, 3… của cùng CLB trong kỳ, vì thanh toán tiếp sẽ nối hạn gói cũ).
+  - `cycle` của từng gói: `YEARLY` khi `durationDays >= 300`, ngược lại `MONTHLY`.
+  - Kỳ không có đơn nào vẫn trả về block với số 0 và `byPackage: []`.
 * **Không có số liệu voucher/giảm giá:** hệ thống hiện không có bảng hay cột `discount` nào (xem lại mục 9 trong bảng chức năng), nên backend không thể thống kê. Nếu cần, phải làm tính năng voucher trước.

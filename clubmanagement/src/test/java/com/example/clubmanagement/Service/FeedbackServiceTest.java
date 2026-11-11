@@ -1,8 +1,11 @@
 package com.example.clubmanagement.Service;
 
 import com.example.clubmanagement.Entity.Feedback;
+import com.example.clubmanagement.Entity.PaymentOrder;
 import com.example.clubmanagement.Entity.User;
+import com.example.clubmanagement.Enum.OrderStatus;
 import com.example.clubmanagement.Repository.FeedbackRepository;
+import com.example.clubmanagement.Repository.PaymentOrderRepository;
 import com.example.clubmanagement.Repository.UserRepository;
 import com.example.clubmanagement.dto.FeedbackRatingOption;
 import com.example.clubmanagement.dto.FeedbackRequest;
@@ -35,6 +38,9 @@ class FeedbackServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private PaymentOrderRepository orderRepository;
 
     @InjectMocks
     private FeedbackService feedbackService;
@@ -134,6 +140,39 @@ class FeedbackServiceTest {
 
         assertThrows(NoSuchElementException.class, () -> feedbackService.deleteFeedbackById(999));
         verify(feedbackRepository, never()).deleteById(any());
+    }
+
+    @Test
+    @DisplayName("Người đã thanh toán gửi feedback -> gắn đơn PAID, verified = true")
+    void createFeedback_LinksPaidOrder_Verified() {
+        FeedbackRequest request = new FeedbackRequest(5, "Rất tốt!");
+        PaymentOrder paid = PaymentOrder.builder().id(50).orderCode(900123L).status(OrderStatus.PAID).build();
+        when(feedbackRepository.existsByUser_UserId(1)).thenReturn(false);
+        when(userRepository.findById(1)).thenReturn(Optional.of(sampleUser));
+        when(orderRepository.findFirstByUser_UserIdAndStatusOrderByPaidAtDesc(1, OrderStatus.PAID))
+                .thenReturn(Optional.of(paid));
+        when(feedbackRepository.saveAndFlush(any(Feedback.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        FeedbackResponse result = feedbackService.createFeedback(1, request);
+
+        assertTrue(result.isVerified());
+        assertEquals(900123L, result.getOrderCode());
+    }
+
+    @Test
+    @DisplayName("Người chưa từng thanh toán vẫn gửi được feedback nhưng verified = false")
+    void createFeedback_NoPaidOrder_NotVerified() {
+        FeedbackRequest request = new FeedbackRequest(4, "Ổn");
+        when(feedbackRepository.existsByUser_UserId(1)).thenReturn(false);
+        when(userRepository.findById(1)).thenReturn(Optional.of(sampleUser));
+        when(orderRepository.findFirstByUser_UserIdAndStatusOrderByPaidAtDesc(1, OrderStatus.PAID))
+                .thenReturn(Optional.empty());
+        when(feedbackRepository.saveAndFlush(any(Feedback.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        FeedbackResponse result = feedbackService.createFeedback(1, request);
+
+        assertFalse(result.isVerified());
+        assertNull(result.getOrderCode());
     }
 
     @Test
