@@ -24,6 +24,11 @@ public class Feedback {
     @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
 
+    /** Đơn PAID của chính người gửi; khác null nghĩa là review đã xác minh (verified). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "order_id")
+    private PaymentOrder order;
+
     @Column(nullable = false)
     private Short rating;
 

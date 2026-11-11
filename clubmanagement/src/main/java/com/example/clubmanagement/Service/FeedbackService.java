@@ -1,10 +1,13 @@
 package com.example.clubmanagement.Service;
 
 import com.example.clubmanagement.Entity.Feedback;
+import com.example.clubmanagement.Entity.PaymentOrder;
 import com.example.clubmanagement.Entity.User;
 import com.example.clubmanagement.Enum.FeedbackRating;
+import com.example.clubmanagement.Enum.OrderStatus;
 import com.example.clubmanagement.dto.FeedbackRatingOption;
 import com.example.clubmanagement.Repository.FeedbackRepository;
+import com.example.clubmanagement.Repository.PaymentOrderRepository;
 import com.example.clubmanagement.Repository.UserRepository;
 import com.example.clubmanagement.dto.FeedbackRequest;
 import com.example.clubmanagement.dto.FeedbackResponse;
@@ -33,10 +36,13 @@ public class FeedbackService {
 
     private final FeedbackRepository feedbackRepository;
     private final UserRepository userRepository;
+    private final PaymentOrderRepository orderRepository;
 
-    public FeedbackService(FeedbackRepository feedbackRepository, UserRepository userRepository) {
+    public FeedbackService(FeedbackRepository feedbackRepository, UserRepository userRepository,
+                           PaymentOrderRepository orderRepository) {
         this.feedbackRepository = feedbackRepository;
         this.userRepository = userRepository;
+        this.orderRepository = orderRepository;
     }
 
     // ====================== USER ======================
@@ -58,8 +64,15 @@ public class FeedbackService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NoSuchElementException("Không tìm thấy người dùng!"));
 
+        // Review được xác minh khi gắn với đơn PAID gần nhất của chính người gửi.
+        // Người chưa từng thanh toán vẫn gửi được feedback nhưng ở dạng chưa xác minh.
+        PaymentOrder paidOrder = orderRepository
+                .findFirstByUser_UserIdAndStatusOrderByPaidAtDesc(userId, OrderStatus.PAID)
+                .orElse(null);
+
         Feedback feedback = Feedback.builder()
                 .user(user)
+                .order(paidOrder)
                 .rating(request.getRating().shortValue())
                 .comment(normalizeComment(request.getComment()))
                 .build();
@@ -79,6 +92,11 @@ public class FeedbackService {
         Feedback feedback = findByUserOrThrow(userId);
         feedback.setRating(request.getRating().shortValue());
         feedback.setComment(normalizeComment(request.getComment()));
+        // Nếu trước đó chưa xác minh mà nay đã có đơn PAID thì gắn để nâng thành verified.
+        if (feedback.getOrder() == null) {
+            orderRepository.findFirstByUser_UserIdAndStatusOrderByPaidAtDesc(userId, OrderStatus.PAID)
+                    .ifPresent(feedback::setOrder);
+        }
         return toResponse(feedbackRepository.save(feedback));
     }
 
@@ -173,6 +191,7 @@ public class FeedbackService {
 
     private FeedbackResponse toResponse(Feedback f) {
         User u = f.getUser();
+        PaymentOrder order = f.getOrder();
         return FeedbackResponse.builder()
                 .id(f.getId())
                 .rating(f.getRating() == null ? null : f.getRating().intValue())
@@ -184,6 +203,8 @@ public class FeedbackService {
                 .fullName(u != null ? u.getFullName() : null)
                 .email(u != null ? u.getEmail() : null)
                 .avatarUrl(u != null ? u.getAvatarUrl() : null)
+                .verified(order != null)
+                .orderCode(order != null ? order.getOrderCode() : null)
                 .build();
     }
 }

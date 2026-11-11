@@ -30,5 +30,9 @@ public interface UserRepository extends JpaRepository<User, Integer> {
 
     long countByCreatedAtBetween(LocalDateTime from, LocalDateTime to);
 
+    @org.springframework.data.jpa.repository.Query("SELECT u.userId FROM User u WHERE u.createdAt BETWEEN :from AND :to")
+    List<Integer> findIdsCreatedAtBetween(@org.springframework.data.repository.query.Param("from") LocalDateTime from,
+                                          @org.springframework.data.repository.query.Param("to") LocalDateTime to);
+
     List<User> findTop5ByOrderByCreatedAtDesc();
 }

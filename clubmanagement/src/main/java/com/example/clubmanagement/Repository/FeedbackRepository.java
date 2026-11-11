@@ -14,17 +14,20 @@ import java.util.Optional;
 @Repository
 public interface FeedbackRepository extends JpaRepository<Feedback, Integer> {
 
-    @EntityGraph(attributePaths = "user")
+    @EntityGraph(attributePaths = {"user", "order"})
     Optional<Feedback> findByUser_UserId(Integer userId);
 
     boolean existsByUser_UserId(Integer userId);
 
-    /** Danh sách cho admin - fetch luôn user để tránh N+1. */
-    @EntityGraph(attributePaths = "user")
+    /** Danh sách cho admin - fetch luôn user và order để tránh N+1. */
+    @EntityGraph(attributePaths = {"user", "order"})
     Page<Feedback> findAllBy(Pageable pageable);
 
-    @EntityGraph(attributePaths = "user")
+    @EntityGraph(attributePaths = {"user", "order"})
     Page<Feedback> findByRating(Short rating, Pageable pageable);
+
+    /** Số review đã xác minh (gắn với một đơn PAID). */
+    long countByOrderIsNotNull();
 
     @Query("SELECT AVG(f.rating) FROM Feedback f")
     Double findAverageRating();

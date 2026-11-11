@@ -28,7 +28,13 @@ public class AdminAnalyticsController {
      */
     @GetMapping
     @Operation(summary = "Lấy phễu chuyển đổi, kênh UTM và KPI doanh thu",
-            description = "Trả về totals, funnel, channels (utm_source/medium), revenue (7 ngày/30 ngày/năm + % tăng trưởng), revenueTrend và subscriptions")
+            description = "Trả về totals (kèm totalUsers, payingCustomers, averageOrderValue), funnel, "
+                    + "channels (utm_source/medium + newUsers, conversionRate, averageOrderValue), "
+                    + "revenue (7 ngày/30 ngày/năm + % tăng trưởng), revenueTrend, subscriptions, "
+                    + "subscriptionSales (đơn bán gói theo kỳ), reviews (verified, coverage, tỉ lệ mua lại) "
+                    + "và transactionGoal (mục tiêu 20 đơn; đếm lũy kế không phụ thuộc days: PAID, có paidAt, "
+                    + "số tiền > 0, mã tham chiếu không rỗng và không bắt đầu bằng MANUAL_). "
+                    + "progressPercent có thể vượt 100%; đây không phải kết quả đối chiếu sao kê.")
     public ResponseEntity<?> getAnalytics(
             @Parameter(description = "Số ngày gần nhất cần thống kê (1 - 365)")
             @RequestParam(defaultValue = "30") int days) {
