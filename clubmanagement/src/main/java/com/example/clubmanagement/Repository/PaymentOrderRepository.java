@@ -4,8 +4,10 @@ import com.example.clubmanagement.Entity.PaymentOrder;
 import com.example.clubmanagement.Enum.OrderStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -15,7 +17,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Integer> {
+public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Integer>, JpaSpecificationExecutor<PaymentOrder> {
     Optional<PaymentOrder> findByOrderCode(Long orderCode);
     boolean existsByOrderCode(Long orderCode);
     List<PaymentOrder> findByClubIdOrderByCreatedAtDesc(Integer clubId);
@@ -51,20 +53,10 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Inte
             + "AND p.paidAt < :moment AND p.club IS NOT NULL")
     List<Integer> findClubIdsPaidBefore(@Param("moment") LocalDateTime moment);
 
-    /** Sổ giao dịch cho Admin: lọc tại SQL và fetch sẵn quan hệ để không phát sinh N+1 khi phân trang. */
+    /** Sổ giao dịch cho Admin: nạp sẵn quan hệ qua EntityGraph để không phát sinh N+1 khi phân trang. */
+    @Override
     @EntityGraph(attributePaths = {"user", "club", "subscriptionPackage"})
-    @Query("SELECT p FROM PaymentOrder p WHERE "
-            + "(:status IS NULL OR p.status = :status) "
-            + "AND (:from IS NULL OR p.createdAt >= :from) "
-            + "AND (:to IS NULL OR p.createdAt <= :to) "
-            + "AND (:search IS NULL OR LOWER(p.user.fullName) LIKE :search ESCAPE '!' "
-            + "     OR LOWER(p.user.email) LIKE :search ESCAPE '!' OR LOWER(p.club.name) LIKE :search ESCAPE '!' "
-            + "     OR LOWER(p.transactionNo) LIKE :search ESCAPE '!' OR STR(p.orderCode) LIKE :search ESCAPE '!')")
-    Page<PaymentOrder> searchForAdmin(@Param("status") OrderStatus status,
-                                      @Param("from") LocalDateTime from,
-                                      @Param("to") LocalDateTime to,
-                                      @Param("search") String search,
-                                      Pageable pageable);
+    Page<PaymentOrder> findAll(Specification<PaymentOrder> spec, Pageable pageable);
 
     /** Khách đã từng trả tiền (đếm một lần cho mỗi người), mẫu số của tỉ lệ review và mua lại. */
     @Query("SELECT COUNT(DISTINCT p.user.userId) FROM PaymentOrder p "

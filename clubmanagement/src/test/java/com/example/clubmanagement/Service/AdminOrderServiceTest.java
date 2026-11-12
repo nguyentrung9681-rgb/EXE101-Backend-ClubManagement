@@ -16,6 +16,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -23,8 +24,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 class AdminOrderServiceTest {
@@ -56,9 +55,10 @@ class AdminOrderServiceTest {
                 .build();
     }
 
+    @SuppressWarnings("unchecked")
     private void stubPage(PaymentOrder order) {
         Page<PaymentOrder> page = new PageImpl<>(List.of(order));
-        when(orderRepository.searchForAdmin(any(), any(), any(), any(), any(Pageable.class))).thenReturn(page);
+        when(orderRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
     }
 
     @Test
@@ -108,11 +108,11 @@ class AdminOrderServiceTest {
     }
 
     @Test
-    @DisplayName("Không lọc status thì truyền null xuống repository")
+    @DisplayName("Không lọc status thì gọi repository với specification")
     void nullStatusPassedThrough() {
         stubPage(order("FT1"));
         adminOrderService.getOrders("  ", null, null, null, 0, 20);
         org.mockito.Mockito.verify(orderRepository)
-                .searchForAdmin(isNull(), any(), any(), eq((String) null), any(Pageable.class));
+                .findAll(any(Specification.class), any(Pageable.class));
     }
 }

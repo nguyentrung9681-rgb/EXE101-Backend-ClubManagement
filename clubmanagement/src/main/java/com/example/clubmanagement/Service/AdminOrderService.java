@@ -7,13 +7,20 @@ import com.example.clubmanagement.Entity.User;
 import com.example.clubmanagement.Enum.OrderStatus;
 import com.example.clubmanagement.Repository.PaymentOrderRepository;
 import com.example.clubmanagement.dto.AdminOrderResponse;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /** Sổ giao dịch của Admin: liệt kê từng đơn kèm mã tham chiếu để đối chiếu sao kê. */
@@ -38,13 +45,45 @@ public class AdminOrderService {
         PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
 
-        return orderRepository.searchForAdmin(
-                        parseStatus(status),
-                        from == null ? null : from.atStartOfDay(),
-                        to == null ? null : to.plusDays(1).atStartOfDay(),
-                        likePattern(search),
-                        pageable)
-                .map(this::toResponse);
+        Specification<PaymentOrder> spec = buildSpecification(
+                parseStatus(status),
+                from == null ? null : from.atStartOfDay(),
+                to == null ? null : to.plusDays(1).atStartOfDay(),
+                search);
+
+        return orderRepository.findAll(spec, pageable).map(this::toResponse);
+    }
+
+    public static Specification<PaymentOrder> buildSpecification(
+            OrderStatus status, LocalDateTime from, LocalDateTime to, String search) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (from != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from));
+            }
+            if (to != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), to));
+            }
+            if (search != null && !search.isBlank()) {
+                String pattern = "%" + search.trim().toLowerCase(Locale.ROOT) + "%";
+                Join<PaymentOrder, User> user = root.join("user", JoinType.LEFT);
+                Join<PaymentOrder, Club> club = root.join("club", JoinType.LEFT);
+
+                predicates.add(cb.or(
+                        cb.like(cb.lower(user.get("fullName")), pattern),
+                        cb.like(cb.lower(user.get("email")), pattern),
+                        cb.like(cb.lower(club.get("name")), pattern),
+                        cb.like(cb.lower(root.get("transactionNo")), pattern),
+                        cb.like(root.get("orderCode").as(String.class), pattern)
+                ));
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 
     private OrderStatus parseStatus(String status) {
@@ -56,17 +95,6 @@ public class AdminOrderService {
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Trạng thái đơn không hợp lệ! Chấp nhận: PENDING, PAID, CANCELLED, EXPIRED.");
         }
-    }
-
-    private String likePattern(String search) {
-        if (search == null || search.isBlank()) {
-            return null;
-        }
-        String escaped = search.trim().toLowerCase(Locale.ROOT)
-                .replace("!", "!!")
-                .replace("%", "!%")
-                .replace("_", "!_");
-        return "%" + escaped + "%";
     }
 
     private AdminOrderResponse toResponse(PaymentOrder order) {
