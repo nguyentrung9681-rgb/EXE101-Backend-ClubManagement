@@ -18,6 +18,13 @@ public interface ClubMemberRepository extends JpaRepository<ClubMember, Integer>
     List<ClubMember> findByDepartmentId(Integer departmentId);
     long countByClubIdAndStatus(Integer clubId, ClubMemberStatus status);
 
+    @Query("SELECT cm FROM ClubMember cm " +
+            "JOIN FETCH cm.user " +
+            "LEFT JOIN FETCH cm.department " +
+            "JOIN FETCH cm.club " +
+            "WHERE cm.id = :id")
+    Optional<ClubMember> findByIdWithDetails(@Param("id") Integer id);
+
     /** Danh sách thành viên theo trạng thái, nạp sẵn user/department/club cho bước map ra DTO. */
     @Query("SELECT cm FROM ClubMember cm " +
             "JOIN FETCH cm.user " +

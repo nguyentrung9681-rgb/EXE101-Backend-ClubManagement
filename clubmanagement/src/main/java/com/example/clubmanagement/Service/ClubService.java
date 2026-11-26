@@ -181,7 +181,7 @@ public class ClubService {
             existingMember.setStatus(status);
             existingMember.setRole(ClubMemberRole.MEMBER);
             existingMember.setJoinedAt(joinedAt);
-            return clubMemberRepository.save(existingMember);
+            return saveAndLoadDetails(existingMember);
         }
 
         // Thiết lập trạng thái dựa trên chế độ hiển thị của Club cho thành viên mới hoàn toàn
@@ -204,7 +204,7 @@ public class ClubService {
                 .joinedAt(joinedAt)
                 .build();
 
-        return clubMemberRepository.save(newMember);
+        return saveAndLoadDetails(newMember);
     }
 
     /**
@@ -239,7 +239,7 @@ public class ClubService {
             validateMemberCapacityForNewMember(clubId);
             member.setStatus(ClubMemberStatus.ACTIVE);
             member.setJoinedAt(LocalDateTime.now());
-            return clubMemberRepository.save(member);
+            return saveAndLoadDetails(member);
         } else {
             // Đổi trạng thái thành LEFT để giữ lịch sử và cho phép gửi lại yêu cầu xin tham gia ở lần sau
             member.setStatus(ClubMemberStatus.LEFT);
@@ -286,8 +286,8 @@ public class ClubService {
 
         // Cập nhật phòng ban
         if (request.getDepartmentId() == null || request.getDepartmentId() == 0) {
-            // Hủy gán trưởng ban cũ nếu vai trò hiện tại là DEPARTMENT_HEAD và đang là head của phòng ban hiện tại
-            if (member.getRole() == ClubMemberRole.DEPARTMENT_HEAD && member.getDepartment() != null) {
+            // Hủy gán trưởng ban cũ nếu thành viên đang là head của phòng ban hiện tại
+            if (member.getDepartment() != null) {
                 Department oldDept = member.getDepartment();
                 if (oldDept.getHead() != null && oldDept.getHead().getId().equals(member.getId())) {
                     oldDept.setHead(null);
@@ -302,7 +302,7 @@ public class ClubService {
                 throw new RuntimeException("Phòng ban không thuộc câu lạc bộ này!");
             }
             // Hủy gán trưởng ban ở phòng ban cũ nếu chuyển phòng ban
-            if (member.getRole() == ClubMemberRole.DEPARTMENT_HEAD && member.getDepartment() != null && !member.getDepartment().getId().equals(department.getId())) {
+            if (member.getDepartment() != null && !member.getDepartment().getId().equals(department.getId())) {
                 Department oldDept = member.getDepartment();
                 if (oldDept.getHead() != null && oldDept.getHead().getId().equals(member.getId())) {
                     oldDept.setHead(null);
@@ -317,36 +317,40 @@ public class ClubService {
             try {
                 ClubMemberRole newRole = ClubMemberRole.valueOf(request.getRole().toUpperCase());
 
-                // Nếu chuyển từ trưởng ban sang vai trò khác, xóa vai trò trưởng ban ở phòng ban
-                if (member.getRole() == ClubMemberRole.DEPARTMENT_HEAD && newRole != ClubMemberRole.DEPARTMENT_HEAD && member.getDepartment() != null) {
-                    Department dept = member.getDepartment();
-                    if (dept.getHead() != null && dept.getHead().getId().equals(member.getId())) {
-                        dept.setHead(null);
-                        departmentRepository.save(dept);
+                if (member.getRole() == ClubMemberRole.PRESIDENT) {
+                    if (newRole != ClubMemberRole.PRESIDENT && newRole != ClubMemberRole.DEPARTMENT_HEAD) {
+                        throw new IllegalArgumentException("Không thể hạ vai trò của Chủ nhiệm tại đây! Vui lòng sử dụng chức năng trao quyền chủ nhiệm.");
                     }
-                }
-
-                member.setRole(newRole);
-
-                // Nếu vai trò mới là DEPARTMENT_HEAD và đã được gán phòng ban, đặt làm head của phòng ban đó
-                if (newRole == ClubMemberRole.DEPARTMENT_HEAD && member.getDepartment() != null) {
-                    Department dept = member.getDepartment();
-                    if (dept.getHead() != null && !dept.getHead().getId().equals(member.getId())) {
-                        ClubMember oldHead = dept.getHead();
-                        if (oldHead.getRole() != ClubMemberRole.PRESIDENT) {
-                            oldHead.setRole(ClubMemberRole.MEMBER);
-                            clubMemberRepository.save(oldHead);
+                    // Giữ nguyên vai trò PRESIDENT khi chủ nhiệm kiêm nhiệm trưởng ban
+                    if (newRole == ClubMemberRole.DEPARTMENT_HEAD && member.getDepartment() != null) {
+                        assignDepartmentHead(member.getDepartment(), member);
+                    }
+                } else {
+                    // Nếu chuyển từ trưởng ban sang vai trò khác, xóa vai trò trưởng ban ở phòng ban
+                    if (member.getRole() == ClubMemberRole.DEPARTMENT_HEAD && newRole != ClubMemberRole.DEPARTMENT_HEAD && member.getDepartment() != null) {
+                        Department dept = member.getDepartment();
+                        if (dept.getHead() != null && dept.getHead().getId().equals(member.getId())) {
+                            dept.setHead(null);
+                            departmentRepository.save(dept);
                         }
                     }
-                    dept.setHead(member);
-                    departmentRepository.save(dept);
+
+                    member.setRole(newRole);
+
+                    // Nếu vai trò mới là DEPARTMENT_HEAD và đã được gán phòng ban, đặt làm head của phòng ban đó
+                    if (newRole == ClubMemberRole.DEPARTMENT_HEAD && member.getDepartment() != null) {
+                        assignDepartmentHead(member.getDepartment(), member);
+                    }
                 }
             } catch (IllegalArgumentException e) {
+                if (e.getMessage() != null && e.getMessage().contains("Chủ nhiệm")) {
+                    throw e;
+                }
                 throw new RuntimeException("Vai trò không hợp lệ (hợp lệ: PRESIDENT, DEPARTMENT_HEAD, TREASURER, MEMBER)");
             }
         }
 
-        return clubMemberRepository.save(member);
+        return saveAndLoadDetails(member);
     }
 
     /**
@@ -403,7 +407,29 @@ public class ClubService {
 
         // 7. Gán vai trò PRESIDENT cho thành viên mới được chọn
         targetMember.setRole(ClubMemberRole.PRESIDENT);
-        return clubMemberRepository.save(targetMember);
+        return saveAndLoadDetails(targetMember);
+    }
+
+    private ClubMember saveAndLoadDetails(ClubMember member) {
+        ClubMember saved = clubMemberRepository.save(member);
+        if (saved == null) {
+            return member;
+        }
+        return saved.getId() != null
+                ? clubMemberRepository.findByIdWithDetails(saved.getId()).orElse(saved)
+                : saved;
+    }
+
+    private void assignDepartmentHead(Department dept, ClubMember newHead) {
+        if (dept.getHead() != null && !dept.getHead().getId().equals(newHead.getId())) {
+            ClubMember oldHead = dept.getHead();
+            if (oldHead.getRole() != ClubMemberRole.PRESIDENT) {
+                oldHead.setRole(ClubMemberRole.MEMBER);
+                clubMemberRepository.save(oldHead);
+            }
+        }
+        dept.setHead(newHead);
+        departmentRepository.save(dept);
     }
 
     /**

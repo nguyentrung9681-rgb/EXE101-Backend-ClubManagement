@@ -62,8 +62,10 @@ public class DepartmentService {
                 throw new RuntimeException("Thành viên trưởng ban không thuộc câu lạc bộ này!");
             }
 
-            // Gán vai trò trưởng ban và thuộc phòng ban này
-            headMember.setRole(ClubMemberRole.DEPARTMENT_HEAD);
+            // Gán vai trò trưởng ban (giữ nguyên PRESIDENT nếu là chủ nhiệm) và thuộc phòng ban này
+            if (headMember.getRole() != ClubMemberRole.PRESIDENT) {
+                headMember.setRole(ClubMemberRole.DEPARTMENT_HEAD);
+            }
             headMember.setDepartment(department);
             clubMemberRepository.save(headMember);
 
@@ -77,6 +79,7 @@ public class DepartmentService {
     /**
      * Lấy danh sách phòng ban trong câu lạc bộ. Chỉ thành viên trong CLB mới được xem.
      */
+    @Transactional(readOnly = true)
     public List<DepartmentResponse> getDepartments(Integer clubId, Integer requesterUserId) {
         ClubMember requester = clubMemberRepository.findByClubIdAndUserUserId(clubId, requesterUserId)
                 .orElseThrow(() -> new RuntimeException("Bạn không phải là thành viên của câu lạc bộ này!"));
@@ -140,8 +143,10 @@ public class DepartmentService {
                     }
                 }
 
-                // Cập nhật trưởng ban mới
-                newHead.setRole(ClubMemberRole.DEPARTMENT_HEAD);
+                // Cập nhật trưởng ban mới (giữ nguyên PRESIDENT nếu là chủ nhiệm)
+                if (newHead.getRole() != ClubMemberRole.PRESIDENT) {
+                    newHead.setRole(ClubMemberRole.DEPARTMENT_HEAD);
+                }
                 newHead.setDepartment(department);
                 clubMemberRepository.save(newHead);
 
@@ -202,6 +207,7 @@ public class DepartmentService {
     /**
      * Kiểm tra quyền truy cập phòng ban (không gian chat).
      */
+    @Transactional(readOnly = true)
     public boolean checkChatAccess(Integer clubId, Integer departmentId, Integer userId) {
         ClubMember member = clubMemberRepository.findByClubIdAndUserUserId(clubId, userId)
                 .orElse(null);

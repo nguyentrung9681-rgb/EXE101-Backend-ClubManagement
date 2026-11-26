@@ -44,6 +44,7 @@ public class ChatService {
      * Tải tin nhắn của Kênh Chat PHÒNG BAN (Lazy loading Cursor Pagination)
      * GET /api/chat/clubs/{clubId}/departments/{departmentId}/messages
      */
+    @Transactional(readOnly = true)
     public MessageCursorPageResponse getDepartmentMessages(Integer clubId, Integer departmentId, Integer userId,
                                                            Integer limit, Long beforeMessageId) {
         validateDepartmentMembership(clubId, departmentId, userId);
@@ -95,6 +96,7 @@ public class ChatService {
      * Tải tin nhắn của Kênh CHUNG CLB (Lazy loading Cursor Pagination)
      * GET /api/chat/clubs/{clubId}/messages
      */
+    @Transactional(readOnly = true)
     public MessageCursorPageResponse getClubMessages(Integer clubId, Integer userId, Integer limit, Long beforeMessageId) {
         validateClubMembership(clubId, userId);
 
