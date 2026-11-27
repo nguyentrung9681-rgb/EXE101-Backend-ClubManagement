@@ -508,8 +508,9 @@ public class AnalyticsService {
             Integer userId = (Integer) row[0];
             String source = (String) row[1];
             String medium = (String) row[2];
-            if (userId != null && source != null && !source.isBlank()) {
-                firstTouchByUser.put(userId, channelKey(source, medium));
+            if (userId != null && source != null && !source.isBlank() && !isSwaggerPlaceholder(source)) {
+                String safeMedium = isSwaggerPlaceholder(medium) ? "" : medium;
+                firstTouchByUser.put(userId, channelKey(source, safeMedium));
             }
         }
     }
