@@ -54,6 +54,57 @@ public class AdminOrderService {
         return orderRepository.findAll(spec, pageable).map(this::toResponse);
     }
 
+    /** Xuất danh sách đơn hàng (mặc định PAID) dạng CSV UTF-8 có BOM để mở bằng Excel làm Customer Contact List. */
+    public byte[] exportOrdersCsv(String status, String search, LocalDate from, LocalDate to) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new IllegalArgumentException("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc!");
+        }
+
+        String effectiveStatus = (status == null || status.isBlank()) ? OrderStatus.PAID.name() : status;
+        Specification<PaymentOrder> spec = buildSpecification(
+                parseStatus(effectiveStatus),
+                from == null ? null : from.atStartOfDay(),
+                to == null ? null : to.plusDays(1).atStartOfDay(),
+                search);
+
+        List<AdminOrderResponse> orders = orderRepository
+                .findAll(spec, Sort.by(Sort.Direction.DESC, "createdAt"))
+                .stream()
+                .map(this::toResponse)
+                .toList();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append('\uFEFF'); // UTF-8 BOM cho Excel hiển thị đúng tiếng Việt
+        sb.append("Order Code,Customer Name,Customer Email,Customer Phone,Club Name,Package,Amount,Status,Payment Method,Transaction Reference,Reference Source,Paid At,Created At\n");
+        for (AdminOrderResponse o : orders) {
+            sb.append(csv(o.getOrderCode())).append(',')
+              .append(csv(o.getCustomerName())).append(',')
+              .append(csv(o.getCustomerEmail())).append(',')
+              .append(csv(o.getCustomerPhone())).append(',')
+              .append(csv(o.getClubName())).append(',')
+              .append(csv(o.getPackageName())).append(',')
+              .append(csv(o.getAmount())).append(',')
+              .append(csv(o.getStatus())).append(',')
+              .append(csv(o.getPaymentMethod())).append(',')
+              .append(csv(o.getTransactionNo())).append(',')
+              .append(csv(o.getReferenceSource())).append(',')
+              .append(csv(o.getPaidAt())).append(',')
+              .append(csv(o.getCreatedAt())).append('\n');
+        }
+        return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static String csv(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String text = String.valueOf(value);
+        if (text.contains(",") || text.contains("\"") || text.contains("\n") || text.contains("\r")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+        return text;
+    }
+
     public static Specification<PaymentOrder> buildSpecification(
             OrderStatus status, LocalDateTime from, LocalDateTime to, String search) {
         return (root, query, cb) -> {

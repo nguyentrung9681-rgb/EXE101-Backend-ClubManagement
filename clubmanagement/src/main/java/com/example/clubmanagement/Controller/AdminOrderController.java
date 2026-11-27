@@ -7,6 +7,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -59,6 +61,33 @@ public class AdminOrderController {
         } catch (Exception e) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage() != null ? e.getMessage() : "Lỗi hệ thống khi tải danh sách đơn"));
+        }
+    }
+
+    /** GET /api/admin/orders/export?status=PAID&search=&from=&to= */
+    @GetMapping("/export")
+    @Operation(summary = "Xuất danh sách đơn hàng / liên hệ khách hàng (CSV)",
+            description = "Xuất file CSV (UTF-8 BOM) gồm mã đơn, tên, email, SĐT khách hàng và mã tham chiếu để spot-check / đối chiếu sao kê. Mặc định lọc status=PAID.")
+    public ResponseEntity<?> exportOrders(
+            @Parameter(description = "Trạng thái đơn (mặc định PAID): PENDING, PAID, CANCELLED, EXPIRED")
+            @RequestParam(required = false, defaultValue = "PAID") String status,
+            @Parameter(description = "Tìm theo tên/email khách, tên CLB, orderCode hoặc mã tham chiếu")
+            @RequestParam(required = false) String search,
+            @Parameter(description = "Từ ngày tạo đơn (yyyy-MM-dd)")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "Đến hết ngày tạo đơn (yyyy-MM-dd)")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        try {
+            byte[] csvBytes = adminOrderService.exportOrdersCsv(status, search, from, to);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"customer-contact-list.csv\"")
+                    .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                    .body(csvBytes);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", e.getMessage() != null ? e.getMessage() : "Lỗi hệ thống khi xuất CSV đơn hàng"));
         }
     }
 }

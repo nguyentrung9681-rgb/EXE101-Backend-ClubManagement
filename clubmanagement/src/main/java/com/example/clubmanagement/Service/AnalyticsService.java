@@ -75,10 +75,10 @@ public class AnalyticsService {
                 .userId(authenticatedUserId)
                 .pagePath(clean(request.getPath(), 255))
                 .pageReferrer(clean(request.getReferrer(), 500))
-                .utmSource(clean(request.getUtmSource(), 80))
-                .utmMedium(clean(request.getUtmMedium(), 80))
-                .utmCampaign(clean(request.getUtmCampaign(), 120))
-                .utmContent(clean(request.getUtmContent(), 120))
+                .utmSource(cleanUtm(request.getUtmSource(), 80))
+                .utmMedium(cleanUtm(request.getUtmMedium(), 80))
+                .utmCampaign(cleanUtm(request.getUtmCampaign(), 120))
+                .utmContent(cleanUtm(request.getUtmContent(), 120))
                 .build());
     }
 
@@ -90,9 +90,9 @@ public class AnalyticsService {
     public void recordQuiet(String eventName, Integer userId, Integer clubId, Long orderCode,
                             BigDecimal amount, String utmSource, String utmMedium, String utmCampaign) {
         try {
-            String source = clean(utmSource, 80);
-            String medium = clean(utmMedium, 80);
-            String campaign = clean(utmCampaign, 120);
+            String source = cleanUtm(utmSource, 80);
+            String medium = cleanUtm(utmMedium, 80);
+            String campaign = cleanUtm(utmCampaign, 120);
 
             if (source == null && userId != null) {
                 TrackingEvent firstTouch = eventRepository
@@ -154,8 +154,9 @@ public class AnalyticsService {
             allVisitors.add(visitorKey);
             visitorsByStep.computeIfAbsent(eventName, k -> new HashSet<>()).add(visitorKey);
 
-            if (source != null && !source.isBlank()) {
-                String channelKey = channelKey(source, medium);
+            if (source != null && !source.isBlank() && !isSwaggerPlaceholder(source)) {
+                String safeMedium = isSwaggerPlaceholder(medium) ? "" : medium;
+                String channelKey = channelKey(source, safeMedium);
                 visitorsByChannel.computeIfAbsent(channelKey, k -> new HashSet<>()).add(visitorKey);
                 if (userId != null) {
                     firstTouchByUser.putIfAbsent(userId, channelKey);
@@ -600,6 +601,15 @@ public class AnalyticsService {
 
     private static Double ratio(long count, long base) {
         return Math.round((count * 10000.0) / base) / 100.0;
+    }
+
+    private static String cleanUtm(String value, int maxLength) {
+        String cleaned = clean(value, maxLength);
+        return isSwaggerPlaceholder(cleaned) ? null : cleaned;
+    }
+
+    private static boolean isSwaggerPlaceholder(String value) {
+        return value != null && "string".equalsIgnoreCase(value.trim());
     }
 
     private static String clean(String value, int maxLength) {
